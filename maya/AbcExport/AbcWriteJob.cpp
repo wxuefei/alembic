@@ -810,6 +810,7 @@ void AbcWriteJob::setup(double iFrame, MayaTransformWriterPtr iParent)
 AbcWriteJob::~AbcWriteJob()
 {
 }
+extern int jobFlag ;
 
 bool AbcWriteJob::eval(double iFrame)
 {
@@ -893,67 +894,85 @@ bool AbcWriteJob::eval(double iFrame)
 
             std::vector< MayaCameraWriterPtr >::iterator camIt, camEnd;
             camEnd = mCameraList.end();
-            for (camIt = mCameraList.begin(); camIt != camEnd; camIt++)
-            {
-                (*camIt)->write();
-            }
+            if ((jobFlag & 1) == 0)
+                for (camIt = mCameraList.begin(); camIt != camEnd; camIt++)
+                {
+                    (*camIt)->write();
+                }
+            else
+                MGlobal::displayInfo("disable camera");
 
             std::vector< MayaMeshWriterPtr >::iterator meshIt, meshEnd;
             meshEnd = mMeshList.end();
-            for (meshIt = mMeshList.begin(); meshIt != meshEnd; meshIt++)
-            {
-                (*meshIt)->write();
-                if ((*meshIt)->isSubD())
+            if ((jobFlag & 2) == 0)
+                for (meshIt = mMeshList.begin(); meshIt != meshEnd; meshIt++)
                 {
-                    mStats.mSubDAnimCVs += (*meshIt)->getNumCVs();
+                        (*meshIt)->write();
+                    if ((*meshIt)->isSubD())
+                    {
+                        mStats.mSubDAnimCVs += (*meshIt)->getNumCVs();
+                    }
+                    else
+                    {
+                        mStats.mPolyAnimCVs += (*meshIt)->getNumCVs();
+                    }
                 }
-                else
-                {
-                    mStats.mPolyAnimCVs += (*meshIt)->getNumCVs();
-                }
-            }
+            else
+                MGlobal::displayInfo("disable mesh");
 
             std::vector< MayaNurbsCurveWriterPtr >::iterator curveIt, curveEnd;
             curveEnd = mCurveList.end();
-            for (curveIt = mCurveList.begin(); curveIt != curveEnd; curveIt++)
-            {
-                (*curveIt)->write();
-                mStats.mCurveAnimCVs += (*curveIt)->getNumCVs();
-            }
+            if ((jobFlag & 4) == 0)
+                for (curveIt = mCurveList.begin(); curveIt != curveEnd; curveIt++)
+                {
+                    (*curveIt)->write();
+                    mStats.mCurveAnimCVs += (*curveIt)->getNumCVs();
+                }
+            else
+                MGlobal::displayInfo("disable curve");
 
             std::vector< MayaNurbsSurfaceWriterPtr >::iterator nurbsIt,nurbsEnd;
             nurbsEnd = mNurbsList.end();
-            for (nurbsIt = mNurbsList.begin(); nurbsIt != nurbsEnd; nurbsIt++)
-            {
-                (*nurbsIt)->write();
-                mStats.mNurbsAnimCVs += (*nurbsIt)->getNumCVs();
-            }
+            if ((jobFlag & 8) == 0)
+                for (nurbsIt = mNurbsList.begin(); nurbsIt != nurbsEnd; nurbsIt++)
+                {
+                    (*nurbsIt)->write();
+                    mStats.mNurbsAnimCVs += (*nurbsIt)->getNumCVs();
+                }
+            else
+                MGlobal::displayInfo("disable nurbs");
 
             std::vector< MayaLocatorWriterPtr >::iterator locIt, locEnd;
             locEnd = mLocatorList.end();
-            for (locIt = mLocatorList.begin(); locIt != locEnd; locIt++)
-            {
-                (*locIt)->write();
-            }
+            if ((jobFlag & 0x10) == 0)
+                for (locIt = mLocatorList.begin(); locIt != locEnd; locIt++)
+                {
+                    (*locIt)->write();
+                }
+            else
+                MGlobal::displayInfo("disable locator");
 
             std::vector< MayaPointPrimitiveWriterPtr >::iterator ptIt, ptEnd;
             ptEnd = mPointList.end();
-            for (ptIt = mPointList.begin(); ptIt != ptEnd; ptIt++)
-            {
-                (*ptIt)->write(curTime);
-                mStats.mPointAnimCVs += (*ptIt)->getNumCVs();
-            }
+            if ((jobFlag & 0x20) == 0)
+                for (ptIt = mPointList.begin(); ptIt != ptEnd; ptIt++)
+                {
+                    (*ptIt)->write(curTime);
+                    mStats.mPointAnimCVs += (*ptIt)->getNumCVs();
+                }
+            else
+                MGlobal::displayInfo("disable point");
 
-            std::vector< AttributesWriterPtr >::iterator sattrCur =
-                mShapeAttrList.begin();
+            std::vector< AttributesWriterPtr >::iterator sattrCur = mShapeAttrList.begin();
+            std::vector< AttributesWriterPtr >::iterator sattrEnd = mShapeAttrList.end();
 
-            std::vector< AttributesWriterPtr >::iterator sattrEnd =
-                mShapeAttrList.end();
-
-            for(; sattrCur != sattrEnd; sattrCur++)
-            {
-                (*sattrCur)->write();
-            }
+            if ((jobFlag & 0x40) == 0)
+                for(; sattrCur != sattrEnd; sattrCur++)
+                {
+                    (*sattrCur)->write();
+                }
+            else
+                MGlobal::displayInfo("disable shape attrbutes");
         }
 
         checkFrame = mTransFrames.find(iFrame);
@@ -963,27 +982,27 @@ bool AbcWriteJob::eval(double iFrame)
             assert(mRoot.valid());
             foundTransFrame = true;
             mTransSamples ++;
-            std::vector< MayaTransformWriterPtr >::iterator tcur =
-                mTransList.begin();
+            std::vector< MayaTransformWriterPtr >::iterator tcur = mTransList.begin();
+            std::vector< MayaTransformWriterPtr >::iterator tend = mTransList.end();
 
-            std::vector< MayaTransformWriterPtr >::iterator tend =
-                mTransList.end();
+            if ((jobFlag & 0x80) == 0)
+                for (; tcur != tend; tcur++)
+                {
+                    (*tcur)->write();
+                }
+            else
+                MGlobal::displayInfo("disable transform");
 
-            for (; tcur != tend; tcur++)
-            {
-                (*tcur)->write();
-            }
+            std::vector< AttributesWriterPtr >::iterator tattrCur = mTransAttrList.begin();
+            std::vector< AttributesWriterPtr >::iterator tattrEnd = mTransAttrList.end();
 
-            std::vector< AttributesWriterPtr >::iterator tattrCur =
-                mTransAttrList.begin();
-
-            std::vector< AttributesWriterPtr >::iterator tattrEnd =
-                mTransAttrList.end();
-
-            for(; tattrCur != tattrEnd; tattrCur++)
-            {
-                (*tattrCur)->write();
-            }
+            if ((jobFlag & 0x100) == 0)
+                for(; tattrCur != tattrEnd; tattrCur++)
+                {
+                    (*tattrCur)->write();
+                }
+            else
+                MGlobal::displayInfo("disable attr");
         }
 
         if (foundTransFrame || foundShapeFrame)

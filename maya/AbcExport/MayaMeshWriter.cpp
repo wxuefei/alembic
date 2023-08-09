@@ -858,8 +858,7 @@ bool MayaMeshWriter::isAnimated() const
     return mIsGeometryAnimated;
 }
 
-void MayaMeshWriter::writePoly(
-    const Alembic::AbcGeom::OV2fGeomParam::Sample & iUVs)
+void MayaMeshWriter::writePoly( const Alembic::AbcGeom::OV2fGeomParam::Sample & iUVs)
 {
     MStatus status = MS::kSuccess;
     MFnMesh lMesh( mDagPath, &status );

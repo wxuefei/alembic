@@ -33,15 +33,12 @@
 ##
 ##-*****************************************************************************
 
-ADD_SUBDIRECTORY(AbcEcho)
-ADD_SUBDIRECTORY(AbcLs)
-ADD_SUBDIRECTORY(AbcTree)
-ADD_SUBDIRECTORY(AbcStitcher)
-ADD_SUBDIRECTORY(AbcDiff)
-ADD_SUBDIRECTORY(AbcZ)
+ADD_EXECUTABLE(abcz AbcZ.cpp)
+TARGET_LINK_LIBRARIES(abcz Alembic::Alembic)
 
-IF (USE_HDF5)
-    ADD_SUBDIRECTORY(AbcConvert)
-ELSE()
-    MESSAGE(STATUS "Skipping AbcConvert: it requires USE_HDF5")
-ENDIF()
+
+set_target_properties(abcz PROPERTIES
+    INSTALL_RPATH_USE_LINK_PATH TRUE
+    INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib)
+
+INSTALL(TARGETS abcz DESTINATION bin)

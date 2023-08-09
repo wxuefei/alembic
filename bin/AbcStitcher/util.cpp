@@ -100,14 +100,12 @@ TimeSamplingPtr TimeAndSamplesMap::get(TimeSamplingPtr iTime,
 index_t getIndexSample(index_t iCurOutIndex, TimeSamplingPtr iOutTime,
     index_t iInNumSamples, TimeSamplingPtr iInTime, index_t & oNumEmpty)
 {
-
     // see if we are missing any samples for oNumEmpty
     chrono_t curTime = iOutTime->getSampleTime(iCurOutIndex);
     chrono_t inChrono = iInTime->getSampleTime(0);
     if (curTime < inChrono)
     {
-        index_t emptyEnd = iOutTime->getNearIndex(inChrono,
-            std::numeric_limits<index_t>::max()).first;
+        index_t emptyEnd = iOutTime->getNearIndex(inChrono, std::numeric_limits<index_t>::max()).first;
         if (emptyEnd > iCurOutIndex)
         {
             oNumEmpty = emptyEnd - iCurOutIndex;
@@ -224,8 +222,7 @@ bool stitchArbGeomParam(const PropertyHeader & propHeader,
     PropertyType ptype = propHeader.getPropertyType();
     bool diffProp = false;
 
-    for (size_t iCpIndex = 1; iCpIndex < numInputs && diffProp == false;
-         iCpIndex++)
+    for (size_t iCpIndex = 1; iCpIndex < numInputs && diffProp == false; iCpIndex++)
     {
         if (!iCompoundProps[iCpIndex].valid())
         {
@@ -519,32 +516,24 @@ void stitchScalarProp(const PropertyHeader & propHeader,
     }
 }
 
-void stitchCompoundProp(ICompoundPropertyVec & iCompoundProps,
-                        OCompoundProperty & oCompoundProp,
-                        const TimeAndSamplesMap & iTimeMap)
+void stitchCompoundProp(ICompoundPropertyVec & iCompoundProps, OCompoundProperty & oCompoundProp, const TimeAndSamplesMap & iTimeMap)
 {
     size_t numCompounds = iCompoundProps.size();
-    for (size_t i = 0; i < numCompounds; ++i)
-    {
-        if (!iCompoundProps[i].valid())
-        {
+    for (size_t i = 0; i < numCompounds; ++i){
+        if (!iCompoundProps[i].valid()){
             continue;
         }
 
         size_t numProps = iCompoundProps[i].getNumProperties();
-        for (size_t propIndex = 0; propIndex < numProps; propIndex++)
-        {
-            const PropertyHeader & propHeader =
-                iCompoundProps[i].getPropertyHeader(propIndex);
+        for (size_t propIndex = 0; propIndex < numProps; propIndex++){
+            const PropertyHeader & propHeader = iCompoundProps[i].getPropertyHeader(propIndex);
 
-            if (oCompoundProp.getPropertyHeader(propHeader.getName()) != NULL)
-            {
+            if (oCompoundProp.getPropertyHeader(propHeader.getName()) != NULL){
                 continue;
             }
 
             if (propHeader.getMetaData().get("isGeomParam") == "true" &&
-                stitchArbGeomParam(propHeader, iCompoundProps, oCompoundProp,
-                                   iTimeMap))
+                stitchArbGeomParam(propHeader, iCompoundProps, oCompoundProp, iTimeMap))
             {
                 continue;
             }
@@ -569,13 +558,11 @@ void stitchCompoundProp(ICompoundPropertyVec & iCompoundProps,
             }
             else if (propHeader.isScalar())
             {
-                stitchScalarProp(propHeader, iCompoundProps,
-                                 oCompoundProp, iTimeMap);
+                stitchScalarProp(propHeader, iCompoundProps, oCompoundProp, iTimeMap);
             }
             else if (propHeader.isArray())
             {
-                stitchArrayProp(propHeader, iCompoundProps,
-                                oCompoundProp, iTimeMap);
+                stitchArrayProp(propHeader, iCompoundProps, oCompoundProp, iTimeMap);
             }
         }
     }

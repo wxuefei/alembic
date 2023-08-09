@@ -368,7 +368,7 @@ private:
 
 #ifndef _WIN32
     typedef int FileHandle;
-    #define BAD_FILE_HANDLE (-1)
+#define BAD_FILE_HANDLE (-1)
 
     static FileHandle openFile(const std::string& iFileName)
     {
@@ -439,13 +439,13 @@ private:
 
 #else // _WIN32 defined
     typedef HANDLE FileHandle;
-    #define BAD_FILE_HANDLE (INVALID_HANDLE_VALUE)
+#define BAD_FILE_HANDLE (INVALID_HANDLE_VALUE)
 
     static FileHandle openFile(const std::string& iFileName)
     {
         // Use both FILE_SHARE_READ and FILE_SHARE_WRITE as the share mode.
         // Without FILE_SHARE_WRITE, this will fail when trying to open a file that is already open for writing.
-        return CreateFile(iFileName.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        return CreateFile(iFileName.c_str(), GENERIC_READ| GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     }
 
     static void closeFile(FileHandle iFile)
@@ -494,10 +494,14 @@ private:
 
             DWORD sizeHigh = static_cast<DWORD>(iLength >> 32);
             DWORD sizeLow = static_cast<DWORD>(iLength);
-            HANDLE mapping = CreateFileMapping(iFile, NULL, PAGE_READONLY, sizeHigh, sizeLow, NULL);
-            if (mapping == NULL) return;
+            HANDLE mapping = CreateFileMapping(iFile, NULL, PAGE_READWRITE, sizeHigh, sizeLow, NULL);
+            if (mapping == NULL) {
+                int err = GetLastError();
+                printf("CreateFileMapping failed, err=%d\n", err);
+                return;
+            }
 
-            LPVOID view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, iLength);
+            LPVOID view = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, iLength);
 
             // regardless of whether we have a successful view, close the mapping
             // the underlying file mapping will remain open as long as the view is open
@@ -525,9 +529,9 @@ private:
 
 public:
     MemoryMappedIStreamReader(const std::string& iFileName,
-                              std::size_t iNumStreams)
+        std::size_t iNumStreams)
         : nstreams(iNumStreams), fileName(iFileName),
-          fileHandle(BAD_FILE_HANDLE)
+        fileHandle(BAD_FILE_HANDLE)
     {
         fileHandle = openFile(iFileName);
         if (fileHandle == BAD_FILE_HANDLE) return;
@@ -541,6 +545,9 @@ public:
 
     ~MemoryMappedIStreamReader()
     {
+        void printDumpStat(char* p);
+        printDumpStat((char*)mappedRegion.p);
+
         mappedRegion.close();
         closeFile(fileHandle);
     }
@@ -569,7 +576,9 @@ public:
 
         const char* p = static_cast<const char*>(mappedRegion.p) + iPos;
         std::memcpy(oBuf, p, iSize);
-
+        //wxf
+        void dumpData(const char* p, uint64_t iPos, uint64_t iSize);
+        dumpData(p, iPos, iSize);
         return true;
     }
 
@@ -753,3 +762,119 @@ void IStreams::read(std::size_t iThreadId, Alembic::Util::uint64_t iPos,
 } // End namespace ALEMBIC_VERSION_NS
 } // End namespace Ogawa
 } // End namespace Alembic
+
+#include<direct.h>
+#include <corecrt_io.h>
+void mkdirs(char* muldir)
+{
+    int i, len;
+    char str[512] = { 0 };
+    strncpy(str, muldir, 512);
+    str[511] = 0;
+    len = strlen((const char*)str);
+    for (i = 0; i < len; i++)
+    {
+        if (str[i] == '\\')
+        {
+            str[i] = '\0';
+            if (access(str, 0) != 0)
+            {
+                mkdir((const char*)str);
+            }
+            str[i] = '\\';
+        }
+    }
+    if (len > 0 && access(str, 0) != 0)
+    {
+        mkdir(str);
+    }
+    return;
+}
+
+#define sizes_max 1600
+#define addr_max  (16000)
+extern void mkdirs(char* muldir);
+static uint64_t addr[addr_max] = { 0 };
+static uint64_t addr_size[addr_max] = { 0 };
+static int no[sizes_max] = { 0 };
+static int sizes[sizes_max] = { 0 }; //20172*144 207368*72 1228800*45
+void dumpData(const char* p, uint64_t iPos, uint64_t iSize) {
+    char filename[128];
+    printf("\tdump: %p, pos=%llx, size=%lld", p, iPos, iSize);
+    if (iSize == 8) { // read num or length
+        uint64_t* pu64 = (uint64_t*)p;
+        printf("\t\tval=0x%llx, %lld", *pu64, *pu64);
+        //printf(", %f", *(double*)pu64);
+    }
+    printf("\n");
+    //return;
+    //dump data
+    int i = 0;
+    for (i = 0; i < sizes_max; i++) {
+        if (sizes[i] == iSize) {
+            break;
+        }
+    }
+    if (iSize > 1024 && i == sizes_max) {
+        for (i = 0; i < sizes_max; i++) {
+            if (sizes[i] == 0) {
+                sizes[i] = iSize;
+                break;
+            }
+        }
+    }
+    if (i < sizes_max) {
+        int n = 0;
+        for (; n < addr_max; n++) {
+            if (addr[n] == iPos) {
+                //printf("*********\n");
+                return;
+            }
+            else if (addr[n] == NULL) {
+                addr[n] = iPos;
+                addr_size[n] = iSize;
+                break;
+            }
+        }
+        if (n == addr_max) {
+            n = addr_max;
+        }
+        sprintf(filename, "E:\\Projects\\maya\\aaa\\abc\\bin\\%lld", iSize);
+        mkdirs(filename);
+        sprintf(filename, "E:\\Projects\\maya\\aaa\\abc\\bin\\%lld\\%d.bin", iSize, no[i]++, iPos);
+        FILE* fp = fopen(filename, "wb+");
+        if (fp) {
+            fwrite(p, 1, iSize, fp);
+            fclose(fp);
+        }
+    }
+    else {
+        if(iSize > 1024)
+        i = i;
+    }
+    //if (iSize == 1228800)
+    //    iSize = 1228800;
+}
+ALEMBIC_EXPORT void printDumpStat(char*p) {
+    for (int i = 0; i < sizes_max; i++) {
+        if (sizes[i] == 0) {
+            break;
+        }
+        printf("printDumpStat size: %d, %d\n", sizes[i], no[i]);
+    }
+    for (int i = 0; i < addr_max ; i++) {
+        if (addr[i] == 0) {
+            break;
+        }
+        int nn = 0;
+        for (int j = 0; j < sizes_max; j++) if (sizes[j] == addr_size[i]){ nn = no[j]; break; }
+
+        printf("printDumpStat addr: %x, %d", addr[i], addr_size[i]);
+        if (nn > 2) {
+            printf(", memset 0");
+            //memset(p + addr[i], 0, addr_size[i]);
+        }
+        printf("\n");
+    }
+
+}

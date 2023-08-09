@@ -72,6 +72,7 @@ MSyntax AbcExport::createSyntax()
 }
 
 
+int jobFlag = 0;
 void* AbcExport::creator()
 {
     return new AbcExport();
@@ -79,6 +80,7 @@ void* AbcExport::creator()
 
 MStatus AbcExport::doIt(const MArgList & args)
 {
+    jobFlag = 0;
 try
 {
     MStatus status;
@@ -572,6 +574,16 @@ try
                 {
                     asOgawa = true;
                 }
+            }
+            else if (arg == "-flag")
+            {
+                if (i + 1 < numJobArgs && jobArgsArray[i + 1].isUnsigned())
+                {
+                    jobFlag = jobArgsArray[++i].asUnsigned();
+                }
+                MString log = "jobFlag = ";
+                log += jobFlag;
+                MGlobal::displayWarning(log);
             }
             else
             {
@@ -1080,7 +1092,7 @@ try
             allFrameRange.insert(f);
         }
     }
-
+    //wxf,
     std::set<double>::iterator it = allFrameRange.begin();
     std::set<double>::iterator itEnd = allFrameRange.end();
 
@@ -1144,6 +1156,20 @@ catch (std::exception & e)
 
 }
 
+#include <Windows.h>
+
+// 获取当前DLL的路径
+void GetDLLPath(char dllPath[])
+{
+    HMODULE hModule;
+
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        (LPCSTR)&GetDLLPath, &hModule))
+    {
+        GetModuleFileNameA(hModule, dllPath, MAX_PATH);
+        // 现在dllPath中存储了当前DLL的完整路径
+    }
+}
 
 
 ALEMBIC_MAYA_PLUGIN_EXPORT  MStatus initializePlugin(MObject obj)
@@ -1152,20 +1178,30 @@ ALEMBIC_MAYA_PLUGIN_EXPORT  MStatus initializePlugin(MObject obj)
     MFnPlugin plugin(obj, "Alembic", ABCEXPORT_VERSION, "Any");
 
     status = plugin.registerCommand(
-        "AbcExport", AbcExport::creator,
+        "AbcExport3", AbcExport::creator,
         AbcExport::createSyntax );
 
     if (!status)
     {
         status.perror("registerCommand");
     }
+    char dllPath[MAX_PATH] = { 0 };
+    GetDLLPath(dllPath);
 
-    MString info = "AbcExport v";
+    MString info = "AbcExport3 wxf(built " __DATE__  " "  __TIME__ "), v";
     info += ABCEXPORT_VERSION;
     info += " using ";
     info += Alembic::Abc::GetLibraryVersion().c_str();
+    info += "\n// ";
+    info += dllPath;
+#ifdef NDEBUG
+    info += " (release)";
+#else
+    info += " (debug)";
+#endif
     MGlobal::displayInfo(info);
 
+    //cout << "hello output" << endl;
     return status;
 }
 
@@ -1174,7 +1210,7 @@ ALEMBIC_MAYA_PLUGIN_EXPORT MStatus uninitializePlugin(MObject obj)
     MStatus status;
     MFnPlugin plugin(obj);
 
-    status = plugin.deregisterCommand("AbcExport");
+    status = plugin.deregisterCommand("AbcExport3");
     if (!status)
     {
         status.perror("deregisterCommand");

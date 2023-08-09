@@ -54,201 +54,201 @@
 using namespace Alembic::AbcGeom;
 using namespace Alembic::AbcCoreAbstract;
 
-namespace{
+namespace {
 
-inline void stitchVisible(ICompoundPropertyVec & iCompoundProps,
-                          OCompoundProperty & oCompoundProp,
-                          const TimeAndSamplesMap & iTimeMap)
-{
-    const PropertyHeader * propHeaderPtr =
+    inline void stitchVisible(ICompoundPropertyVec& iCompoundProps,
+        OCompoundProperty& oCompoundProp,
+        const TimeAndSamplesMap& iTimeMap)
+    {
+        const PropertyHeader* propHeaderPtr =
             iCompoundProps[0].getPropertyHeader("visible");
-    stitchScalarProp(*propHeaderPtr, iCompoundProps, oCompoundProp, iTimeMap);
-}
-
-template< class IPARAM, class IPARAMSAMP, class OPARAMSAMP >
-void getOGeomParamSamp(IPARAM & iGeomParam, IPARAMSAMP & iGeomSamp,
-                     OPARAMSAMP & oGeomSamp, index_t iIndex)
-{
-    if (iGeomParam.isIndexed())
-    {
-        iGeomParam.getIndexed(iGeomSamp, iIndex);
-        oGeomSamp.setVals(*(iGeomSamp.getVals()));
-        oGeomSamp.setScope(iGeomSamp.getScope());
-        oGeomSamp.setIndices(*(iGeomSamp.getIndices()));
+        stitchScalarProp(*propHeaderPtr, iCompoundProps, oCompoundProp, iTimeMap);
     }
-    else
-    {
-        iGeomParam.getExpanded(iGeomSamp, iIndex);
-        oGeomSamp.setVals(*(iGeomSamp.getVals()));
-        oGeomSamp.setScope(iGeomSamp.getScope());
-    }
-}
 
-template< class IData, class IDataSchema, class OData, class ODataSchema >
-void init(std::vector< IObject > & iObjects, OObject & oParentObj,
-          ODataSchema & oSchema, const TimeAndSamplesMap & iTimeMap,
-          std::size_t & oTotalSamples)
-{
-
-    // find the first valid IObject
-    IObject inObj;
-    for (std::size_t i = 0; i < iObjects.size(); ++i)
+    template< class IPARAM, class IPARAMSAMP, class OPARAMSAMP >
+    void getOGeomParamSamp(IPARAM& iGeomParam, IPARAMSAMP& iGeomSamp,
+        OPARAMSAMP& oGeomSamp, index_t iIndex)
     {
-        if (iObjects[i].valid())
+        if (iGeomParam.isIndexed())
         {
-            inObj = iObjects[i];
-            break;
+            iGeomParam.getIndexed(iGeomSamp, iIndex);
+            oGeomSamp.setVals(*(iGeomSamp.getVals()));
+            oGeomSamp.setScope(iGeomSamp.getScope());
+            oGeomSamp.setIndices(*(iGeomSamp.getIndices()));
+        }
+        else
+        {
+            iGeomParam.getExpanded(iGeomSamp, iIndex);
+            oGeomSamp.setVals(*(iGeomSamp.getVals()));
+            oGeomSamp.setScope(iGeomSamp.getScope());
         }
     }
 
-    const std::string fullNodeName = inObj.getFullName();
-
-    // gather information from the first input node in the list:
-    IDataSchema iSchema0 = IData(inObj).getSchema();
-
-    TimeSamplingPtr tsPtr0 = iTimeMap.get(iSchema0.getTimeSampling(),
-                                          oTotalSamples);
-
-    TimeSamplingType tsType0 = tsPtr0->getTimeSamplingType();
-    checkAcyclic(tsType0, fullNodeName);
-
-    ICompoundPropertyVec iCompoundProps;
-    iCompoundProps.reserve(iObjects.size());
-
-    ICompoundPropertyVec iArbGeomCompoundProps;
-    iArbGeomCompoundProps.reserve(iObjects.size());
-
-    ICompoundPropertyVec iUserCompoundProps;
-    iUserCompoundProps.reserve(iObjects.size());
-
-    ICompoundPropertyVec iSchemaProps;
-    iSchemaProps.reserve(iObjects.size());
-
-    Abc::IBox3dProperty childBounds = iSchema0.getChildBoundsProperty();
-    TimeSamplingPtr ctsPtr0;
-    TimeSamplingType ctsType0;
-    if (childBounds)
+    template< class IData, class IDataSchema, class OData, class ODataSchema >
+    void init(std::vector< IObject >& iObjects, OObject& oParentObj,
+        ODataSchema& oSchema, const TimeAndSamplesMap& iTimeMap,
+        std::size_t& oTotalSamples)
     {
-        ctsPtr0 = childBounds.getTimeSampling();
-        ctsType0 = ctsPtr0->getTimeSamplingType();
-        std::string nameAndBounds = fullNodeName + " child bounds";
-        checkAcyclic(ctsType0, nameAndBounds);
-    }
 
-    bool hasVisible = inObj.getProperties().getPropertyHeader("visible") != NULL;
-
-    // sanity check (no frame range checking here)
-    //      - timesamplying type has to be the same and can't be acyclic
-    for (size_t i = 0; i < iObjects.size(); i++)
-    {
-        if (!iObjects[i].valid())
+        // find the first valid IObject
+        IObject inObj;
+        for (std::size_t i = 0; i < iObjects.size(); ++i)
         {
-            continue;
-        }
-
-        IDataSchema iSchema =
-            IData(iObjects[i]).getSchema();
-
-        TimeSamplingPtr tsPtr = iSchema.getTimeSampling();
-        TimeSamplingType tsType = tsPtr->getTimeSamplingType();
-        checkAcyclic(tsType, fullNodeName);
-        if (!(tsType0 == tsType))
-        {
-            std::cerr << "Can not stitch different sampling type for node \""
-                << fullNodeName << "\"" << std::endl;
-            // more details on this
-            if (tsType.getNumSamplesPerCycle()
-                != tsType0.getNumSamplesPerCycle())
+            if (iObjects[i].valid())
             {
-                std::cerr << "\tnumSamplesPerCycle values are different"
-                    << std::endl;
+                inObj = iObjects[i];
+                break;
             }
-            if (tsType.getTimePerCycle() != tsType0.getTimePerCycle())
-            {
-                std::cerr << "\ttimePerCycle values are different"
-                    << std::endl;
-            }
-            exit(1);
         }
 
-        ICompoundProperty cp = iObjects[i].getProperties();
-        iCompoundProps.push_back(cp);
+        const std::string fullNodeName = inObj.getFullName();
 
-        ICompoundProperty arbProp = iSchema.getArbGeomParams();
-        if (arbProp)  // might be empty
-            iArbGeomCompoundProps.push_back(arbProp);
+        // gather information from the first input node in the list:
+        IDataSchema iSchema0 = IData(inObj).getSchema();
 
-        ICompoundProperty userProp = iSchema.getUserProperties();
-        if (userProp)  // might be empty
-            iUserCompoundProps.push_back(userProp);
+        TimeSamplingPtr tsPtr0 = iTimeMap.get(iSchema0.getTimeSampling(),
+            oTotalSamples);
 
-        Abc::IBox3dProperty childBounds = iSchema.getChildBoundsProperty();
-        TimeSamplingPtr ctsPtr;
-        TimeSamplingType ctsType;
+        TimeSamplingType tsType0 = tsPtr0->getTimeSamplingType();
+        checkAcyclic(tsType0, fullNodeName);
+
+        ICompoundPropertyVec iCompoundProps;
+        iCompoundProps.reserve(iObjects.size());
+
+        ICompoundPropertyVec iArbGeomCompoundProps;
+        iArbGeomCompoundProps.reserve(iObjects.size());
+
+        ICompoundPropertyVec iUserCompoundProps;
+        iUserCompoundProps.reserve(iObjects.size());
+
+        ICompoundPropertyVec iSchemaProps;
+        iSchemaProps.reserve(iObjects.size());
+
+        Abc::IBox3dProperty childBounds = iSchema0.getChildBoundsProperty();
+        TimeSamplingPtr ctsPtr0;
+        TimeSamplingType ctsType0;
         if (childBounds)
         {
-            ctsPtr = childBounds.getTimeSampling();
-            ctsType = ctsPtr->getTimeSamplingType();
-            iSchemaProps.push_back(iSchema);
+            ctsPtr0 = childBounds.getTimeSampling();
+            ctsType0 = ctsPtr0->getTimeSamplingType();
+            std::string nameAndBounds = fullNodeName + " child bounds";
+            checkAcyclic(ctsType0, nameAndBounds);
         }
 
-        if (!(ctsType0 == ctsType))
+        bool hasVisible = inObj.getProperties().getPropertyHeader("visible") != NULL;
+
+        // sanity check (no frame range checking here)
+        //      - timesamplying type has to be the same and can't be acyclic
+        for (size_t i = 0; i < iObjects.size(); i++)
         {
-            std::cerr <<
-                "Can not stitch different sampling type for child bounds on\""
-                << fullNodeName << "\"" << std::endl;
-            // more details on this
-            if (ctsType.getNumSamplesPerCycle()
-                != ctsType0.getNumSamplesPerCycle())
+            if (!iObjects[i].valid())
             {
-                std::cerr << "\tnumSamplesPerCycle values are different"
-                    << std::endl;
+                continue;
             }
-            if (ctsType.getTimePerCycle() != ctsType0.getTimePerCycle())
+
+            IDataSchema iSchema =
+                IData(iObjects[i]).getSchema();
+
+            TimeSamplingPtr tsPtr = iSchema.getTimeSampling();
+            TimeSamplingType tsType = tsPtr->getTimeSamplingType();
+            checkAcyclic(tsType, fullNodeName);
+            if (!(tsType0 == tsType))
             {
-                std::cerr << "\ttimePerCycle values are different"
-                    << std::endl;
+                std::cerr << "Can not stitch different sampling type for node \""
+                    << fullNodeName << "\"" << std::endl;
+                // more details on this
+                if (tsType.getNumSamplesPerCycle()
+                    != tsType0.getNumSamplesPerCycle())
+                {
+                    std::cerr << "\tnumSamplesPerCycle values are different"
+                        << std::endl;
+                }
+                if (tsType.getTimePerCycle() != tsType0.getTimePerCycle())
+                {
+                    std::cerr << "\ttimePerCycle values are different"
+                        << std::endl;
+                }
+                exit(1);
             }
-            if (!ctsPtr0 || !ctsPtr)
+
+            ICompoundProperty cp = iObjects[i].getProperties();
+            iCompoundProps.push_back(cp);
+
+            ICompoundProperty arbProp = iSchema.getArbGeomParams();
+            if (arbProp)  // might be empty
+                iArbGeomCompoundProps.push_back(arbProp);
+
+            ICompoundProperty userProp = iSchema.getUserProperties();
+            if (userProp)  // might be empty
+                iUserCompoundProps.push_back(userProp);
+
+            Abc::IBox3dProperty childBounds = iSchema.getChildBoundsProperty();
+            TimeSamplingPtr ctsPtr;
+            TimeSamplingType ctsType;
+            if (childBounds)
             {
-                std::cerr << "\tchild bounds are missing on some archives"
-                    << std::endl;
+                ctsPtr = childBounds.getTimeSampling();
+                ctsType = ctsPtr->getTimeSamplingType();
+                iSchemaProps.push_back(iSchema);
             }
-            exit(1);
+
+            if (!(ctsType0 == ctsType))
+            {
+                std::cerr <<
+                    "Can not stitch different sampling type for child bounds on\""
+                    << fullNodeName << "\"" << std::endl;
+                // more details on this
+                if (ctsType.getNumSamplesPerCycle()
+                    != ctsType0.getNumSamplesPerCycle())
+                {
+                    std::cerr << "\tnumSamplesPerCycle values are different"
+                        << std::endl;
+                }
+                if (ctsType.getTimePerCycle() != ctsType0.getTimePerCycle())
+                {
+                    std::cerr << "\ttimePerCycle values are different"
+                        << std::endl;
+                }
+                if (!ctsPtr0 || !ctsPtr)
+                {
+                    std::cerr << "\tchild bounds are missing on some archives"
+                        << std::endl;
+                }
+                exit(1);
+            }
+
         }
 
-    }
+        OData oData(oParentObj, inObj.getName(), tsPtr0);
+        oSchema = oData.getSchema();
 
-    OData oData(oParentObj, inObj.getName(), tsPtr0);
-    oSchema = oData.getSchema();
+        // stitch "visible" if it's points
+        //
+        if (hasVisible)
+        {
+            OCompoundProperty oCompoundProp = oData.getProperties();
+            stitchVisible(iCompoundProps, oCompoundProp, iTimeMap);
+        }
 
-    // stitch "visible" if it's points
-    //
-    if (hasVisible)
-    {
-        OCompoundProperty oCompoundProp = oData.getProperties();
-        stitchVisible(iCompoundProps, oCompoundProp, iTimeMap);
-    }
+        // stitch ArbGeomParams and User Properties
+        //
+        if (iArbGeomCompoundProps.size() == iObjects.size())
+        {
+            OCompoundProperty oArbGeomCompoundProp = oSchema.getArbGeomParams();
+            stitchCompoundProp(iArbGeomCompoundProps, oArbGeomCompoundProp, iTimeMap);
+        }
 
-    // stitch ArbGeomParams and User Properties
-    //
-    if (iArbGeomCompoundProps.size() == iObjects.size())
-    {
-        OCompoundProperty oArbGeomCompoundProp = oSchema.getArbGeomParams();
-        stitchCompoundProp(iArbGeomCompoundProps, oArbGeomCompoundProp, iTimeMap);
-    }
+        if (iUserCompoundProps.size() == iObjects.size())
+        {
+            OCompoundProperty oUserCompoundProp = oSchema.getUserProperties();
+            stitchCompoundProp(iUserCompoundProps, oUserCompoundProp, iTimeMap);
+        }
 
-    if (iUserCompoundProps.size() == iObjects.size())
-    {
-        OCompoundProperty oUserCompoundProp = oSchema.getUserProperties();
-        stitchCompoundProp(iUserCompoundProps, oUserCompoundProp, iTimeMap);
+        if (!iSchemaProps.empty())
+        {
+            stitchScalarProp(childBounds.getHeader(), iSchemaProps, oSchema, iTimeMap);
+        }
     }
-
-    if (!iSchemaProps.empty())
-    {
-        stitchScalarProp(childBounds.getHeader(), iSchemaProps, oSchema, iTimeMap);
-    }
-}
 
 };
 
@@ -256,8 +256,7 @@ void init(std::vector< IObject > & iObjects, OObject & oParentObj,
 // a recursive function that reads all inputs and write to the given oObject
 // node if there's no gap in the frame range for animated nodes
 //
-void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
-                  const TimeAndSamplesMap & iTimeMap, bool atRoot)
+void visitObjects(std::vector<IObject>& iObjects, OObject& oParentObj, const TimeAndSamplesMap& iTimeMap, bool atRoot)
 {
     OObject outObj;
 
@@ -279,7 +278,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
         std::cout << inObj.getFullName() << std::endl;
     }
 
-    const AbcA::ObjectHeader & header = inObj.getHeader();
+    const AbcA::ObjectHeader& header = inObj.getHeader();
     std::size_t totalSamples = 0;
 
     // there are a number of things that needs to be checked for each node
@@ -303,7 +302,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
         ICompoundPropertyVec iCompoundProps;
         iCompoundProps.reserve(iObjects.size());
 
-        const PropertyHeader * locHeader = NULL;
+        const PropertyHeader* locHeader = NULL;
 
         for (size_t i = 0; i < iObjects.size(); i++)
         {
@@ -316,7 +315,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
             ICompoundProperty cp = iObjects[i].getProperties();
             iCompoundProps.push_back(cp);
 
-            const PropertyHeader * childLocHeader =
+            const PropertyHeader* childLocHeader =
                 cp.getPropertyHeader("locator");
             if (!locHeader && childLocHeader)
             {
@@ -344,7 +343,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
             // write empties only if we are also writing a sample, as the
             // first sample will be repeated over and over again
             for (index_t emptyIdx = 0;
-                 reqIdx < numSamples && emptyIdx < numEmpties; ++emptyIdx)
+                reqIdx < numSamples && emptyIdx < numEmpties; ++emptyIdx)
             {
                 XformSample samp = iSchema.getValue(reqIdx);
                 oSchema.set(samp);
@@ -368,7 +367,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
         if (locHeader)
         {
             stitchScalarProp(*locHeader, iCompoundProps, oCompoundProp,
-                             iTimeMap);
+                iTimeMap);
         }
     }
     else if (ISubD::matches(header))
@@ -466,7 +465,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IV2fGeomParam, IV2fGeomParam::Sample,
                         OV2fGeomParam::Sample>(uvs, iUVSample,
-                                               oUVSample, reqIdx);
+                            oUVSample, reqIdx);
                     oSamp.setUVs(oUVSample);
                 }
 
@@ -481,7 +480,6 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
     }
     else if (IPolyMesh::matches(header))
     {
-
         OPolyMeshSchema oSchema;
         init< IPolyMesh, IPolyMeshSchema, OPolyMesh, OPolyMeshSchema >(
             iObjects, oParentObj, oSchema, iTimeMap, totalSamples);
@@ -520,6 +518,8 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
             {
                 oSchema.set(emptySample);
             }
+            //wxf
+            printf("\tobject %d, mesh numSamples=%d\n",i, numSamples);
 
             for (; reqIdx < numSamples; reqIdx++)
             {
@@ -549,7 +549,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IV2fGeomParam, IV2fGeomParam::Sample,
                         OV2fGeomParam::Sample>(uvs, iUVSample,
-                                               oUVSample, reqIdx);
+                            oUVSample, reqIdx);
                     oSamp.setUVs(oUVSample);
                 }
 
@@ -560,7 +560,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IN3fGeomParam, IN3fGeomParam::Sample,
                         ON3fGeomParam::Sample>(normals, iNormalsSample,
-                                               oNormalsSample, reqIdx);
+                            oNormalsSample, reqIdx);
                     oSamp.setNormals(oNormalsSample);
                 }
 
@@ -601,7 +601,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
             // write empties only if we are also writing a sample, as the
             // first sample will be repeated over and over again
             for (index_t emptyIdx = 0;
-                 reqIdx < numSamples && emptyIdx < numEmpties; ++emptyIdx)
+                reqIdx < numSamples && emptyIdx < numEmpties; ++emptyIdx)
             {
                 oSchema.set(iSchema.getValue(reqIdx));
             }
@@ -614,7 +614,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
 
         // for the rest of the samples just set the last one as long as
         // a sample has been already set
-        for (size_t i = oSchema.getNumSamples(); i != 0 && i < totalSamples;++i)
+        for (size_t i = oSchema.getNumSamples(); i != 0 && i < totalSamples; ++i)
         {
             oSchema.setFromPrevious();
         }
@@ -693,7 +693,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IFloatGeomParam, IFloatGeomParam::Sample,
                         OFloatGeomParam::Sample>(iWidths, iWidthSample,
-                                                 oWidthSample, reqIdx);
+                            oWidthSample, reqIdx);
                     oSamp.setWidths(oWidthSample);
                 }
 
@@ -703,7 +703,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IV2fGeomParam, IV2fGeomParam::Sample,
                         OV2fGeomParam::Sample>(iUVs, iUVSample,
-                                               oUVSample, reqIdx);
+                            oUVSample, reqIdx);
                     oSamp.setUVs(oUVSample);
                 }
 
@@ -713,7 +713,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IN3fGeomParam, IN3fGeomParam::Sample,
                         ON3fGeomParam::Sample>(iNormals, iNormalsSample,
-                                               oNormalsSample, reqIdx);
+                            oNormalsSample, reqIdx);
                     oSamp.setNormals(oNormalsSample);
                 }
 
@@ -744,18 +744,18 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 continue;
             }
 
-            IPointsSchema iSchema =
-                IPoints(iObjects[i]).getSchema();
+            IPointsSchema iSchema = IPoints(iObjects[i]).getSchema();
             IFloatGeomParam iWidths = iSchema.getWidthsParam();
             index_t numSamples = iSchema.getNumSamples();
             index_t numEmpty = 0;
-            index_t reqIdx = getIndexSample(oSchema.getNumSamples(),
-                oSchema.getTimeSampling(), numSamples,
-                iSchema.getTimeSampling(), numEmpty);
+            index_t reqIdx = getIndexSample(oSchema.getNumSamples(), oSchema.getTimeSampling(), 
+                numSamples, iSchema.getTimeSampling(), numEmpty);
             for (index_t emptyIdx = 0; emptyIdx < numEmpty; ++emptyIdx)
             {
                 oSchema.set(emptySample);
             }
+            //wxf
+            printf("\tobject %d, point numSamples=%d\n", i, numSamples);
 
             for (; reqIdx < numSamples; reqIdx++)
             {
@@ -768,8 +768,13 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 if (idPtr)
                     oSamp.setIds(*idPtr);
                 Abc::V3fArraySamplePtr velocPtr = iSamp.getVelocities();
-                if (velocPtr)
+                if (velocPtr) {
                     oSamp.setVelocities(*velocPtr);
+                    //wxf
+                    Dimensions dim = velocPtr->getDimensions();
+                    printf("\tdim=%lld\n", dim.rank());
+                    if (dim.rank() > 0)printf("dim[0]=%lld\n", dim[0]);
+                }
 
                 IFloatGeomParam::Sample iWidthSample;
                 OFloatGeomParam::Sample oWidthSample;
@@ -777,7 +782,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IFloatGeomParam, IFloatGeomParam::Sample,
                         OFloatGeomParam::Sample>(iWidths, iWidthSample,
-                                                 oWidthSample, reqIdx);
+                            oWidthSample, reqIdx);
                     oSamp.setWidths(oWidthSample);
                 }
 
@@ -859,7 +864,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IV2fGeomParam, IV2fGeomParam::Sample,
                         OV2fGeomParam::Sample>(uvs, iUVSample,
-                                               oUVSample, reqIdx);
+                            oUVSample, reqIdx);
                     oSamp.setUVs(oUVSample);
                 }
 
@@ -869,7 +874,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 {
                     getOGeomParamSamp <IN3fGeomParam, IN3fGeomParam::Sample,
                         ON3fGeomParam::Sample>(normals, iNormalsSample,
-                                               oNormalsSample, reqIdx);
+                            oNormalsSample, reqIdx);
                     oSamp.setNormals(oNormalsSample);
                 }
 
@@ -877,15 +882,15 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
                 if (iSchema.hasTrimCurve())
                 {
                     oSamp.setTrimCurve(iSamp.getTrimNumLoops(),
-                                       *(iSamp.getTrimNumCurves()),
-                                       *(iSamp.getTrimNumVertices()),
-                                       *(iSamp.getTrimOrders()),
-                                       *(iSamp.getTrimKnots()),
-                                       *(iSamp.getTrimMins()),
-                                       *(iSamp.getTrimMaxes()),
-                                       *(iSamp.getTrimU()),
-                                       *(iSamp.getTrimV()),
-                                       *(iSamp.getTrimW()));
+                        *(iSamp.getTrimNumCurves()),
+                        *(iSamp.getTrimNumVertices()),
+                        *(iSamp.getTrimOrders()),
+                        *(iSamp.getTrimKnots()),
+                        *(iSamp.getTrimMins()),
+                        *(iSamp.getTrimMaxes()),
+                        *(iSamp.getTrimU()),
+                        *(iSamp.getTrimV()),
+                        *(iSamp.getTrimW()));
                 }
                 oSchema.set(oSamp);
             }
@@ -926,25 +931,21 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
 
     // After done writing THIS OObject node, if input nodes have children,
     // go deeper, otherwise we are done here
-    for (size_t i = 0 ; i < iObjects.size(); i++ )
-    {
-        if (!iObjects[i].valid())
-        {
+    for (size_t i = 0; i < iObjects.size(); i++) {
+        if (!iObjects[i].valid()) {
             continue;
         }
 
-        for (size_t j = 0; j < iObjects[i].getNumChildren(); ++j)
-        {
+        size_t childNum = iObjects[i].getNumChildren();
+        for (size_t j = 0; j < childNum; ++j){
             std::vector< IObject > childObjects;
             std::string childName = iObjects[i].getChildHeader(j).getName();
             // skip names that we've already written out
-            if (outObj.getChildHeader(childName) != NULL)
-            {
+            if (outObj.getChildHeader(childName) != NULL){
                 continue;
             }
 
-            for (size_t k =i; k < iObjects.size(); ++k)
-            {
+            for (size_t k = i; k < iObjects.size(); ++k){
                 childObjects.push_back(iObjects[k].getChild(childName));
             }
 
@@ -959,7 +960,7 @@ void visitObjects(std::vector< IObject > & iObjects, OObject & oParentObj,
 // DO IT.
 //-*****************************************************************************
 //-*****************************************************************************
-int main( int argc, char *argv[] )
+int main(int argc, char* argv[])
 {
     if (argc < 4)
     {
@@ -982,8 +983,8 @@ int main( int argc, char *argv[] )
         {
             timeMap.setVerbose(true);
             fileName = argv[2];
-            inStart ++;
-            numInputs --;
+            inStart++;
+            numInputs--;
         }
 
         std::vector< chrono_t > minVec;
@@ -1012,7 +1013,7 @@ int main( int argc, char *argv[] )
             chrono_t min = DBL_MAX;
             Alembic::Util::uint32_t numSamplings = archive.getNumTimeSamplings();
             timeMap.add(archive.getTimeSampling(0),
-                        archive.getMaxNumSamplesForTimeSamplingIndex(0));
+                archive.getMaxNumSamplesForTimeSamplingIndex(0));
 
             if (numSamplings > 1)
             {
@@ -1030,7 +1031,7 @@ int main( int argc, char *argv[] )
                 minVec.push_back(min);
                 if (minIndexMap.count(min) == 0)
                 {
-                    minIndexMap.insert(std::make_pair(min, i-inStart));
+                    minIndexMap.insert(std::make_pair(min, i - inStart));
                 }
                 else if (argv[inStart] != argv[i])
                 {
@@ -1063,7 +1064,7 @@ int main( int argc, char *argv[] )
         std::string userStr = md.get(Abc::kUserDescriptionKey);
         if (!userStr.empty())
         {
-            userStr =  "AbcStitcher: " + userStr;
+            userStr = "AbcStitcher: " + userStr;
         }
 
         // Create an archive with the default writer

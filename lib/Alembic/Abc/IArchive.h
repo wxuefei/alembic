@@ -205,7 +205,7 @@ IArchive::IArchive( ARCHIVE_CTOR iCtor,
 
     ALEMBIC_ABC_SAFE_CALL_BEGIN( "IArchive::IArchive( iFileName )" );
 
-    m_archive = iCtor( iFileName, iCachePtr );
+    m_archive = iCtor(iFileName, iCachePtr);
 
     ALEMBIC_ABC_SAFE_CALL_END_RESET();
 

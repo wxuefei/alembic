@@ -73,6 +73,7 @@ public:
     virtual bool isScalarLike();
     virtual void getAs( index_t iSample, void *iIntoLocation,
                         Alembic::Util::PlainOldDataType iPod );
+    void getSamplePos(index_t iSampleIndex, uint64_t& oPos, uint64_t& oSize);
 
 private:
 

@@ -113,6 +113,23 @@ void AprImpl::getSample( index_t iSampleIndex, AbcA::ArraySamplePtr &oSample )
 
     ReadArraySample( dims, data, id, m_header->header.getDataType(), oSample );
 }
+//wxf, just for float32 array£¬ refer to ReadUtil.cpp: ReadData()
+void AprImpl::getSamplePos( index_t iSampleIndex, uint64_t&oPos, uint64_t&oSize)
+{
+    size_t index = m_header->verifyIndex(iSampleIndex) * 2;
+
+    StreamIDPtr streamId = Alembic::Util::dynamic_pointer_cast<ArImpl, AbcA::ArchiveReader>
+        (getObject()->getArchive())->getStreamID();
+
+    std::size_t id = streamId->getID();
+    Ogawa::IDataPtr data = m_group->getData(index, id);
+
+    oPos = data->getPos();      // point to uint64_t size, checksum(16 bytes)
+    oSize = data->getSize();    //ReadUtil.cpp: ReadData()
+
+    oPos += 8 + 16; // skip uint64_t size, checksum(16 bytes)
+    oSize -= 16;    // skip checksum(16 bytes)
+}
 
 //-*****************************************************************************
 std::pair<index_t, chrono_t> AprImpl::getFloorIndex( chrono_t iTime )

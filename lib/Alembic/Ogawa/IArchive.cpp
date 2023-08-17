@@ -86,6 +86,10 @@ IGroupPtr IArchive::getGroup() const
 {
     return mGroup;
 }
+//wxf
+void* IArchive::getMemoryMapPtr() const{
+    return mStreams->getMemoryMapPtr();
+}
 
 } // End namespace ALEMBIC_VERSION_NS
 } // End namespace Ogawa

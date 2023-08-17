@@ -61,6 +61,7 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
 
     AbcA::ArraySamplePtr samp;
     index_t maxSamples = iProp.getNumSamples();
+    printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
         iProp.get( samp, ISampleSelector( i ) );
@@ -102,6 +103,7 @@ void visitSimpleScalarProperty( PROP iProp, const std::string &iIndent )
     AbcA::ArraySamplePtr samp =
         AbcA::AllocateArraySample( dt, dims );
     index_t maxSamples = iProp.getNumSamples();
+    printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
         iProp.get( const_cast<void*>( samp->getData() ),

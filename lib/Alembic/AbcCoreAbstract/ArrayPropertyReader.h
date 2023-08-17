@@ -141,6 +141,7 @@ public:
     //! and std::wstring as core language-level primitives.
     virtual void getAs( index_t iSample, void *iIntoLocation,
                         PlainOldDataType iPod ) = 0;
+    virtual void getSamplePos(index_t iSampleIndex, uint64_t& oPos, uint64_t& oSize)=0;
 };
 
 } // End namespace ALEMBIC_VERSION_NS

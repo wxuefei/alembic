@@ -44,6 +44,9 @@
 namespace Alembic {
 namespace Ogawa {
 namespace ALEMBIC_VERSION_NS {
+//wxf
+typedef void (*pfn_dumpData)(char* p, uint64_t iPos, uint64_t iSize);
+ALEMBIC_EXPORT void setDumpData(pfn_dumpData);
 
 class ALEMBIC_EXPORT IStreams
 {
@@ -63,7 +66,8 @@ public:
     // locks on the threadId, seeks to iPos, and reads iSize bytes into oBuf
     void read(std::size_t iThreadId, Alembic::Util::uint64_t iPos,
               Alembic::Util::uint64_t iSize, void * oBuf);
-
+    //wxf
+    void* getMemoryMapPtr();
 private:
     // noncopyable
     IStreams(const IStreams &);

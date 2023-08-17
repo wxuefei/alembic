@@ -100,6 +100,10 @@ public:
     {
         return m_archiveVersion;
     }
+    virtual void* getMemoryMapPtr()
+    {
+        return m_archive.getMemoryMapPtr();
+    }
 
     StreamIDPtr getStreamID();
 

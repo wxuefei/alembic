@@ -93,8 +93,10 @@ public:
 
         if ( iMatching == kStrictMatching )
         {
-            return iMetaData.get( "schemaObjTitle" ) == getSchemaObjTitle() ||
-                iMetaData.get( "schema" ) == getSchemaObjTitle();
+            std::string objTitle = iMetaData.get( "schemaObjTitle" );
+            std::string sot = getSchemaObjTitle();
+            std::string sch = iMetaData.get("schema");
+            return objTitle == sot || sch == sot;
         }
 
         if ( iMatching == kSchemaTitleMatching )

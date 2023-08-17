@@ -64,11 +64,8 @@ Alembic::Abc::IArchive IFactory::getArchive( const std::string & iFileName,
 {
 
     // try Ogawa first, use kQuietNoop at first in case we fail
-    Alembic::AbcCoreOgawa::ReadArchive ogawa(
-        m_numStreams,
-        m_readStrategy == kMemoryMappedFiles);
-    Alembic::Abc::IArchive archive( ogawa, iFileName,
-        Alembic::Abc::ErrorHandler::kQuietNoopPolicy, m_cachePtr );
+    Alembic::AbcCoreOgawa::ReadArchive ogawa(m_numStreams, m_readStrategy == kMemoryMappedFiles);
+    Alembic::Abc::IArchive archive( ogawa, iFileName, Alembic::Abc::ErrorHandler::kQuietNoopPolicy, m_cachePtr );
 
     if ( archive.valid() )
     {

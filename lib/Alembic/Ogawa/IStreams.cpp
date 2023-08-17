@@ -61,12 +61,16 @@
 
 
 
-
 namespace Alembic {
 namespace Ogawa {
 namespace ALEMBIC_VERSION_NS
 {
-
+//wxf
+static pfn_dumpData dumpData_cb = NULL;
+ALEMBIC_EXPORT void setDumpData(pfn_dumpData cb) {
+    dumpData_cb = cb;
+}
+    
 namespace
 {
 
@@ -84,6 +88,8 @@ public:
 
     // not all streams have a size
     virtual Alembic::Util::uint64_t size() {return 0xffffffffffffffff;};
+    //wxf
+    virtual void* getMemoryMapPtr() { return NULL; };
 };
 
 typedef Alembic::Util::shared_ptr<IStreamReader> IStreamReaderPtr;
@@ -545,8 +551,8 @@ public:
 
     ~MemoryMappedIStreamReader()
     {
-        void printDumpStat(char* p);
-        printDumpStat((char*)mappedRegion.p);
+        //void printDumpStat(char* p);
+        //printDumpStat((char*)mappedRegion.p);
 
         mappedRegion.close();
         closeFile(fileHandle);
@@ -568,17 +574,20 @@ public:
     {
         return static_cast<Alembic::Util::uint64_t>(mappedRegion.len);
     }
-
+    //wxf
+    void* getMemoryMapPtr() {
+        return mappedRegion.p;
+    }
     bool read(std::size_t iStream, Alembic::Util::uint64_t iPos,
               Alembic::Util::uint64_t iSize, void* oBuf)
     {
         if (iSize > mappedRegion.len || iPos > mappedRegion.len || iPos + iSize > mappedRegion.len) return false;
 
-        const char* p = static_cast<const char*>(mappedRegion.p) + iPos;
+        char* p = static_cast<char*>(mappedRegion.p) + iPos;
         std::memcpy(oBuf, p, iSize);
         //wxf
-        void dumpData(const char* p, uint64_t iPos, uint64_t iSize);
-        dumpData(p, iPos, iSize);
+        if(dumpData_cb)
+            dumpData_cb(p, iPos, iSize);
         return true;
     }
 
@@ -758,123 +767,10 @@ void IStreams::read(std::size_t iThreadId, Alembic::Util::uint64_t iPos,
             "Ogawa IStreams::read failed.");
     }
 }
-
+//wxf
+void* IStreams::getMemoryMapPtr() {
+    return mData->reader->getMemoryMapPtr();
+}
 } // End namespace ALEMBIC_VERSION_NS
 } // End namespace Ogawa
 } // End namespace Alembic
-
-#include<direct.h>
-#include <corecrt_io.h>
-void mkdirs(char* muldir)
-{
-    int i, len;
-    char str[512] = { 0 };
-    strncpy(str, muldir, 512);
-    str[511] = 0;
-    len = strlen((const char*)str);
-    for (i = 0; i < len; i++)
-    {
-        if (str[i] == '\\')
-        {
-            str[i] = '\0';
-            if (access(str, 0) != 0)
-            {
-                mkdir((const char*)str);
-            }
-            str[i] = '\\';
-        }
-    }
-    if (len > 0 && access(str, 0) != 0)
-    {
-        mkdir(str);
-    }
-    return;
-}
-
-#define sizes_max 1600
-#define addr_max  (16000)
-extern void mkdirs(char* muldir);
-static uint64_t addr[addr_max] = { 0 };
-static uint64_t addr_size[addr_max] = { 0 };
-static int no[sizes_max] = { 0 };
-static int sizes[sizes_max] = { 0 }; //20172*144 207368*72 1228800*45
-void dumpData(const char* p, uint64_t iPos, uint64_t iSize) {
-    char filename[128];
-    printf("\tdump: %p, pos=%llx, size=%lld", p, iPos, iSize);
-    if (iSize == 8) { // read num or length
-        uint64_t* pu64 = (uint64_t*)p;
-        printf("\t\tval=0x%llx, %lld", *pu64, *pu64);
-        //printf(", %f", *(double*)pu64);
-    }
-    printf("\n");
-    //return;
-    //dump data
-    int i = 0;
-    for (i = 0; i < sizes_max; i++) {
-        if (sizes[i] == iSize) {
-            break;
-        }
-    }
-    if (iSize > 1024 && i == sizes_max) {
-        for (i = 0; i < sizes_max; i++) {
-            if (sizes[i] == 0) {
-                sizes[i] = iSize;
-                break;
-            }
-        }
-    }
-    if (i < sizes_max) {
-        int n = 0;
-        for (; n < addr_max; n++) {
-            if (addr[n] == iPos) {
-                //printf("*********\n");
-                return;
-            }
-            else if (addr[n] == NULL) {
-                addr[n] = iPos;
-                addr_size[n] = iSize;
-                break;
-            }
-        }
-        if (n == addr_max) {
-            n = addr_max;
-        }
-        sprintf(filename, "E:\\Projects\\maya\\aaa\\abc\\bin\\%lld", iSize);
-        mkdirs(filename);
-        sprintf(filename, "E:\\Projects\\maya\\aaa\\abc\\bin\\%lld\\%d.bin", iSize, no[i]++, iPos);
-        FILE* fp = fopen(filename, "wb+");
-        if (fp) {
-            fwrite(p, 1, iSize, fp);
-            fclose(fp);
-        }
-    }
-    else {
-        if(iSize > 1024)
-        i = i;
-    }
-    //if (iSize == 1228800)
-    //    iSize = 1228800;
-}
-ALEMBIC_EXPORT void printDumpStat(char*p) {
-    for (int i = 0; i < sizes_max; i++) {
-        if (sizes[i] == 0) {
-            break;
-        }
-        printf("printDumpStat size: %d, %d\n", sizes[i], no[i]);
-    }
-    for (int i = 0; i < addr_max ; i++) {
-        if (addr[i] == 0) {
-            break;
-        }
-        int nn = 0;
-        for (int j = 0; j < sizes_max; j++) if (sizes[j] == addr_size[i]){ nn = no[j]; break; }
-
-        printf("printDumpStat addr: %x, %d", addr[i], addr_size[i]);
-        if (nn > 2) {
-            printf(", memset 0");
-            //memset(p + addr[i], 0, addr_size[i]);
-        }
-        printf("\n");
-    }
-
-}

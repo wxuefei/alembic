@@ -63,7 +63,7 @@ public:
     Alembic::Util::uint16_t getVersion() const;
 
     IGroupPtr getGroup() const;
-
+    void* getMemoryMapPtr() const;
 private:
     void init();
     IStreamsPtr mStreams;

@@ -180,6 +180,12 @@ void printParent( AbcG::IObject iObj,
                   bool recursive = false,
                   bool first = false )
 {
+    if (AbcG::IPolyMesh::matches(iObj.getMetaData())) //wxf,never match
+    {   
+        AbcG::IPolyMesh mesh(iObj);
+        AbcG::IPolyMeshSchema ms = mesh.getSchema();
+        printf("mesh: ");
+    }
     if ( !first && !long_list )
         std::cout << std::endl;
     std::cout << CYANCOLOR
@@ -481,7 +487,26 @@ void printChild( Abc::ICompoundProperty iParent, Abc::PropertyHeader header,
     std::cout << RESETCOLOR;
 
 }
+template<typename T> 
+void GetMinAndMaxTime(T& Schema, float& MinTime, float& MaxTime)
+{
+    //checkf(Schema.valid(), TEXT("Invalid Schema"));
+    Alembic::AbcCoreAbstract::TimeSamplingPtr TimeSampler = Schema.getTimeSampling();
+    MinTime = (float)TimeSampler->getSampleTime(0);
+    MaxTime = (float)TimeSampler->getSampleTime(Schema.getNumSamples() - 1);
+}
+template<typename T> 
+void GetStartTimeAndFrame(T& Schema, float& StartTime, int& StartFrame)
+{
+    //checkf(Schema.valid(), TEXT("Invalid Schema"));
+    Alembic::AbcCoreAbstract::TimeSamplingPtr TimeSampler = Schema.getTimeSampling();
 
+    StartTime = (float)TimeSampler->getSampleTime(0);
+    Alembic::AbcCoreAbstract::TimeSamplingType SamplingType = TimeSampler->getTimeSamplingType();
+    // We know the seconds per frame, so if we take the time for the first stored sample we can work out how many 'empty' frames come before it
+    // Ensure that the start frame is never lower that 0
+    StartFrame = ceil(StartTime / (float)SamplingType.getTimePerCycle());
+}
 //-*****************************************************************************
 void printChild( AbcG::IObject iParent, AbcG::IObject iObj,
                  bool all = false, bool long_list = false, bool meta = false,
@@ -508,6 +533,19 @@ void printChild( AbcG::IObject iParent, AbcG::IObject iObj,
          printMetaData( md, all, long_list );
 
     std::cout << RESETCOLOR;
+
+    if (AbcG::IPolyMesh::matches(md)) //wxf
+    {
+        AbcG::IPolyMesh mesh(iObj);
+        AbcG::IPolyMeshSchema ms = mesh.getSchema();
+        size_t NumSamples = ms.getNumSamples();
+        float MinTime = 0, MaxTime = 0;
+        int StartFrameIndex = 0;
+        GetMinAndMaxTime(ms, MinTime, MaxTime);
+        GetStartTimeAndFrame(ms, MinTime, StartFrameIndex);
+
+        printf("NumSamples=%u, StartFrameIndex=%d, MinTime=%f, MaxTime=%f ", NumSamples, StartFrameIndex, MinTime, MaxTime);
+    }
 
     if ( long_list )
         std::cout << std::endl;

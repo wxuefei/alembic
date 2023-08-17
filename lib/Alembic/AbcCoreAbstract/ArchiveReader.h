@@ -126,6 +126,7 @@ public:
     //! Return self
     //! ...
     virtual ArchiveReaderPtr asArchivePtr() = 0;
+    virtual void* getMemoryMapPtr() { return NULL; };   //wxf
 };
 
 } // End namespace ALEMBIC_VERSION_NS

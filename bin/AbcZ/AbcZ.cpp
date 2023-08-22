@@ -11,6 +11,7 @@
 #include <Alembic/Ogawa/IStreams.h>
 #include <iostream>
 #include <sstream>
+#include <chrono>
 #include <conio.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -25,8 +26,22 @@ using namespace std;
 //-*****************************************************************************
 void visitProperties( ICompoundProperty, string & );
 
+typedef struct ABCZ_FILE {
+    char tag[4];            // ABCZ
+    uint64_t    filesize;   // block data size
+    uint32_t    blockcount; // block count
+}ABCZ_FILE;
+typedef struct ABCZ_BLOCK {
+    uint64_t    pos;        // block target pos
+    uint64_t    blocksize;  // block data size
+}ABCZ_BLOCK;
+
 static char* archive_addr = NULL;
 static uint64_t archive_length = 0;
+static bool isGeom = false;
+uint32_t totalsize_max = 0;
+map<uint64_t, uint32_t> addrMap;   // addr, size
+map<uint32_t, uint32_t> sizeMap;   // size, num
 //-*****************************************************************************
 void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
     string ptype = "ArrayProperty ";
@@ -35,27 +50,67 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
     const AbcA::DataType& dt = iProp.getDataType();
     AbcA::ArraySamplePtr samp;
     index_t maxSamples = iProp.getNumSamples();
-    bool isPoint = iProp.getName() == "P";
-    bool isNormal = iProp.getName() == "N";
-    bool isUV = iProp.getName() == ".vals";
-
+    bool isPoint = false, isNormal = false, isuv = false;
+    if (isGeom) {
+        isPoint = iProp.getName() == "P";
+        isNormal = iProp.getName() == "N";
+    } else {
+        isuv = isUV(iProp.getHeader());
+    }
+    addrMap.clear();
+    sizeMap.clear();
     for ( index_t i = 0 ; i < maxSamples; ++i ){
-        uint64_t oPos=0, oSize=0;
-        iProp.getPtr()->getSamplePos(i, oPos, oSize);
-        printf("i=%lld, pos: %llx, size=%lld\n", i, oPos, oSize);
-        iProp.get( samp, ISampleSelector( i ) );
-        asize = samp->size();
-        //*(archive_addr + oPos) = 1;
+        if (isPoint || isNormal || isuv) {
+            uint64_t oPos=0, oSize=0;
+            iProp.getPtr()->getSamplePos(i, oPos, oSize);
+            //printf("i=%lld, pos= %llx, size=%lld\n", i, oPos, oSize);
+            if (oSize > 0xffffffff) {
+                continue;//should never happen
+            }
+            if (addrMap.count(oPos) == 0) {
+                addrMap[oPos] = (uint32_t)oSize;
+                sizeMap[(uint32_t)oSize] ++;
+            }
+            else {
+                printf("skip repeated: i=%lld, pos= %llx, size=%lld\n", i, oPos, oSize);
+            }
+        }
+        if (asize == 0) 
+        {
+            iProp.get(samp, ISampleSelector(i));
+            asize = samp->size();
+            //samp->getData
+        }
     }
 
-    stringstream msg;
-    msg << iIndent << "  " << ptype << "name=" << iProp.getName()
-        << ";interpretation=" << iProp.getMetaData().get("interpretation")
-        << ";datatype=" << dt << ", size=" << dt.getNumBytes()
-        << ";arraysize=" << asize 
-        << ";numsamps=" << iProp.getNumSamples() << endl;
+    size_t numsamps = iProp.getNumSamples();
+    size_t sampsize = asize * iProp.getDataType().getNumBytes();
+    size_t totalsize = sampsize * numsamps;
 
-    cout << msg.str();
+    cout << iIndent << "  " << ptype << "name=" << iProp.getName()
+        << ";interpretation=" << iProp.getMetaData().get("interpretation")
+        << ";datatype=" << dt 
+        << ";arraysize=" << asize 
+        << ";numsamps=" << numsamps
+        << ", sample size=" << sampsize
+        << ", total size=" << totalsize
+        << endl;
+    if (totalsize > totalsize_max)totalsize_max = totalsize;
+    if (iProp.getDataType().getPod() == kFloat32POD) {
+        //wxf, save object's vertex & uv
+        for (const auto& it : addrMap) {
+            uint64_t pos = it.first;
+            uint32_t size = it.second;
+            uint32_t count = sizeMap[size];
+            if (count > 1) {    // && size > 1024
+                printf("write pos:%llx, size: %u, count=%u\n", pos, size, count);
+                //*(archive_addr + oPos) = 1;
+                //memset((archive_addr + pos), 0, size);
+            }
+            else
+                printf("skip pos:%llx, size: %u, count=%u\n", pos, size, count);
+        }
+    }
 }
 
 //-*****************************************************************************
@@ -70,8 +125,8 @@ void visitSimpleScalarProperty(IScalarProperty iProp, const string &iIndent )
     AbcA::ArraySamplePtr samp = AbcA::AllocateArraySample( dt, dims );
     index_t maxSamples = iProp.getNumSamples();
     for ( index_t i = 0 ; i < maxSamples; ++i ){
-        iProp.get( const_cast<void*>( samp->getData() ), ISampleSelector( i ) );
-        asize = samp->size();
+        //iProp.get( const_cast<void*>( samp->getData() ), ISampleSelector( i ) );
+        //asize = samp->size();
         //printf("i=%d, ptr: %p, size=%d\n", i, samp->getData(), asize);
     };
 
@@ -93,8 +148,12 @@ void visitCompoundProperty( ICompoundProperty iProp, string &ioIndent ){
 
     cout << ioIndent << ptype << "name=" << iProp.getName()
         << ";schema=" << iProp.getMetaData().get("schema") << endl;
+    bool oldIsGeom = isGeom;
+    isGeom = iProp.getName() == ".geom";
 
     visitProperties( iProp, ioIndent );
+
+    isGeom = oldIsGeom;
 
     ioIndent = oldIndent;
 }
@@ -116,7 +175,6 @@ void visitProperties( ICompoundProperty iParent, string &ioIndent )
         }else {
             //wxf
         }
-        fflush(stdout);
     }
 
     ioIndent = oldIndent;
@@ -138,7 +196,7 @@ void GetStartTimeAndFrame(T& Schema, float& StartTime, int& StartFrame)
     Alembic::AbcCoreAbstract::TimeSamplingType SamplingType = TimeSampler->getTimeSamplingType();
     // We know the seconds per frame, so if we take the time for the first stored sample we can work out how many 'empty' frames come before it
     // Ensure that the start frame is never lower that 0
-    StartFrame = ceil(StartTime / (float)SamplingType.getTimePerCycle());
+    StartFrame = (int)ceil(StartTime / (float)SamplingType.getTimePerCycle());
 }
 
 //-*****************************************************************************
@@ -179,7 +237,7 @@ void visitObject( IObject iObj, string iIndent )
 
 void mkdirs(char* muldir)
 {
-    int i, len;
+    size_t i, len;
     char str[512] = { 0 };
     strncpy(str, muldir, 512);
     str[511] = 0;
@@ -198,24 +256,13 @@ void mkdirs(char* muldir)
     }
     return;
 }
-typedef struct ABCZ_FILE {
-    char tag[4];            // ABCZ
-    uint64_t    filesize;   // block data size
-    uint32_t    blockcount; // block count
-}ABCZ_FILE;
-typedef struct ABCZ_BLOCK {
-    uint64_t    pos;        // block target pos
-    uint64_t    blocksize;  // block data size
-}ABCZ_BLOCK;
+
 #define sizes_max 1600
 #define addr_max  (16000)
 static uint64_t addr[addr_max] = { 0 };
 static uint64_t addr_size[addr_max] = { 0 };
 static int no[sizes_max] = { 0 };
 static int sizes[sizes_max] = { 0 }; //20172*144 207368*72 1228Microsoft Visual Studio Community 2019800*45
-
-map<uint64_t, uint32_t> addrMap;   // addr, size
-map<uint32_t, uint32_t> sizeMap;   // size, num
 static char bin_path[128] = { 0 };
 
 void dumpData(char* p, uint64_t iPos, uint64_t iSize) {
@@ -243,7 +290,7 @@ void dumpData(char* p, uint64_t iPos, uint64_t iSize) {
     if (iSize > 1024 && i == sizes_max) {
         for (i = 0; i < sizes_max; i++) {
             if (sizes[i] == 0) {
-                sizes[i] = iSize;
+                sizes[i] = (uint32_t)iSize;
                 break;
             }
         }
@@ -266,7 +313,7 @@ void dumpData(char* p, uint64_t iPos, uint64_t iSize) {
         }
         sprintf(path, "E:\\Projects\\maya\\aaa\\abc\\%s\\%lld\\", bin_path, iSize);
         mkdirs(path);
-        sprintf(filename, "%d_%x.bin", no[i]++, iPos);
+        sprintf(filename, "%d_%llx.bin", no[i]++, iPos);
         strcat(path, filename);
         FILE* fp = fopen(path, "wb+");
         if (fp) {
@@ -297,7 +344,7 @@ void printDumpStat() {
         int nn = 0;
         for (int j = 0; j < sizes_max; j++) if (sizes[j] == addr_size[i]) { nn = no[j]; break; }
 
-        printf("printDumpStat addr: %x, %d", addr[i], addr_size[i]);
+        printf("printDumpStat addr: %llx, %lld", addr[i], addr_size[i]);
         if (nn > 2) {
             printf(", memset 0");
             //memset(p + addr[i], 0, addr_size[i]);
@@ -337,7 +384,9 @@ int abcz(int argc, char* argv[]) {
     filename = "1plane_tri.abc";
     filename = "a1_nonormals.abc";
     filename = "a1_1.abc";
-    //filename = "chr_DaJiaZhang.abc";
+    //filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
+    //filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
+    //filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
 
     setBinPath(filename);
     //setDumpData(dumpData);
@@ -357,15 +406,15 @@ int abcz(int argc, char* argv[]) {
         printf("archive NumTimeSamplings=%d\n", archive.getNumTimeSamplings());
         AbcA::TimeSamplingPtr tsp = archive.getTimeSampling(TimeSamplingIndex);
         printf("tsp NumStoredTimes=%llu\n", tsp->getNumStoredTimes());
-        printf("tsp SampleTime=%llf\n", tsp->getSampleTime(0));
+        printf("tsp SampleTime=%f\n", tsp->getSampleTime(0));
         const std::vector < chrono_t >& st = tsp->getStoredTimes();
-        printf("st getStoredTimes=%lld, startFrame=%llf\n", st.size(), st[0]);
+        printf("st getStoredTimes=%lld, startFrame=%f\n", st.size(), st[0]);
         TimeSamplingType tst = tsp->getTimeSamplingType();
         chrono_t cycle = tst.getTimePerCycle();
         float fps = 1 / cycle;
-        printf("cycle=%llf, fps=%f\n", cycle, fps);
-        index_t maxSample = archive.getMaxNumSamplesForTimeSamplingIndex(1);
-        printf("startFrame=%llf, %lld\n", st[0]/cycle, maxSample);
+        printf("cycle=%f, fps=%f\n", cycle, fps);
+        index_t maxSample = archive.getMaxNumSamplesForTimeSamplingIndex(TimeSamplingIndex);
+        printf("startFrame=%f, %lld\n", st[0]/cycle, maxSample);
 
         if (appName != ""){
             cout << "  file written by: " << appName << endl;
@@ -382,7 +431,8 @@ int abcz(int argc, char* argv[]) {
 
     printf("abcz done\n");
     //printDumpStat();
-    printf("press any key to exit.\n"); char a = getch();
+    printf("press any key to exit.\n"); 
+    //char a = getch();
     /*exit(0);*/
     return 0;
 }
@@ -392,22 +442,6 @@ void testHalf(){
     //printf("f1=%f\n", (float)f1);
     //return 0;
     //printDumpStat(NULL);
-    printf("map size: %u,%u\n", addrMap.size(), addrMap.count(100));
-    int v = addrMap[100];
-    printf("map size: %u,%u\n", addrMap.size(), addrMap.count(100));
-    map<uint64_t, uint32_t>::iterator iter = addrMap.find(200);
-    if (iter != addrMap.end()) {
-        printf("v: %u\n", iter->second);
-    }
-    addrMap[200] = 12;
-    printf("map size: %u\n", addrMap.size());
-    iter = addrMap.find(200);
-    if (iter != addrMap.end()) {
-        printf("v: %u\n", iter->second);
-    }
-    v = addrMap[200];
-    printf("map size: %u\n", addrMap.size());
-    exit(0);
 }
 void init() {
     //system("mode con:cols=120 lines=20000");
@@ -420,6 +454,13 @@ int main( int argc, char *argv[] ){
     init();
 //    testHalf();
     //system("cmd");
+    auto now = std::chrono::system_clock::now();
+    
     abcz(argc, argv);
+
+    auto duration = std::chrono::system_clock::now() - now;
+    long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    printf("totalsize_max: %u\n", totalsize_max);
+    printf("spent time: %.2fs\n", ((float)ms) / 1000);
     return 0;
 }

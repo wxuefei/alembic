@@ -25,6 +25,8 @@ using namespace std;
 
 //-*****************************************************************************
 void visitProperties( ICompoundProperty, string & );
+int compress_float(float*, float*, size_t);
+int decompress_float(float* frame1, float* frame2, size_t count);
 
 typedef struct ABCZ_FILE {
     char tag[4];            // ABCZ
@@ -36,6 +38,7 @@ typedef struct ABCZ_BLOCK {
     uint64_t    blocksize;  // block data size
 }ABCZ_BLOCK;
 
+static bool demcompress = false;
 static char* archive_addr = NULL;
 static uint64_t archive_length = 0;
 static bool isGeom = false;
@@ -49,6 +52,8 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
 
     const AbcA::DataType& dt = iProp.getDataType();
     AbcA::ArraySamplePtr samp;
+    uint64_t pos0 = 0;
+    uint64_t oPos = 0, oSize = 0;
     index_t maxSamples = iProp.getNumSamples();
     bool isPoint = false, isNormal = false, isuv = false;
     if (isGeom) {
@@ -61,9 +66,7 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
     sizeMap.clear();
     for ( index_t i = 0 ; i < maxSamples; ++i ){
         if (isPoint || isNormal || isuv) {
-            uint64_t oPos=0, oSize=0;
             iProp.getPtr()->getSamplePos(i, oPos, oSize);
-            //printf("i=%lld, pos= %llx, size=%lld\n", i, oPos, oSize);
             if (oSize > 0xffffffff) {
                 continue;//should never happen
             }
@@ -79,7 +82,7 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
         {
             iProp.get(samp, ISampleSelector(i));
             asize = samp->size();
-            //samp->getData
+            pos0 = oPos;
         }
     }
 
@@ -96,48 +99,64 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
         << ", total size=" << totalsize
         << endl;
     if (totalsize > totalsize_max)totalsize_max = totalsize;
-    if (iProp.getDataType().getPod() == kFloat32POD) {
-        //wxf, save object's vertex & uv
-        for (const auto& it : addrMap) {
-            uint64_t pos = it.first;
-            uint32_t size = it.second;
-            uint32_t count = sizeMap[size];
-            if (count > 1) {    // && size > 1024
-                printf("write pos:%llx, size: %u, count=%u\n", pos, size, count);
-                //*(archive_addr + oPos) = 1;
-                //memset((archive_addr + pos), 0, size);
+    if (dt.getPod() == kFloat32POD && oSize > 10240) {  // compress the data block size greater than 10k
+        //for (const auto& it : addrMap) {
+        //    uint64_t pos = it.first;
+        //    uint32_t size = it.second;
+        //    uint32_t count = sizeMap[size];
+        //    if (count > 1) {    // && size > 1024
+        //        printf("write pos:%llx, size: %u, count=%u\n", pos, size, count);
+        //        //*(archive_addr + oPos) = 1;
+        //        //memset((archive_addr + pos), 0, size);
+        //    }
+        //    else
+        //        printf("skip pos:%llx, size: %u, count=%u\n", pos, size, count);
+        //}
+        //
+        float* pf = (float*)samp.get()->getData();
+        for (index_t i = 1; i < maxSamples; ++i) {
+            uint64_t oPos = 0, oSize = 0;
+            iProp.getPtr()->getSamplePos(i, oPos, oSize);
+            uint32_t count = sizeMap[oSize];
+            if (count > 1) {
+                printf("%d\n", sizeof(float) * count);
+                float* frame = (float*)(archive_addr+oPos);
+                size_t count = asize * dt.getExtent();
+                if (demcompress) {
+                    decompress_float(pf, frame, count);
+                    memcpy(pf, frame, sizeof(float) * count);
+                }
+                else {
+                    //compress_float(pf, frame, count);
+                    memset(frame, 0, sizeof(float)*count);
+                }
             }
-            else
-                printf("skip pos:%llx, size: %u, count=%u\n", pos, size, count);
         }
     }
+
 }
 
 //-*****************************************************************************
 void visitSimpleScalarProperty(IScalarProperty iProp, const string &iIndent )
 {
-    string ptype = "ScalarProperty ";
-    size_t asize = 0;
+    //string ptype = "ScalarProperty ";
+    //size_t asize = 0;
 
-    const AbcA::DataType &dt = iProp.getDataType();
-    const Alembic::Util ::uint8_t extent = dt.getExtent();
-    Alembic::Util::Dimensions dims( extent );
-    AbcA::ArraySamplePtr samp = AbcA::AllocateArraySample( dt, dims );
-    index_t maxSamples = iProp.getNumSamples();
-    for ( index_t i = 0 ; i < maxSamples; ++i ){
-        //iProp.get( const_cast<void*>( samp->getData() ), ISampleSelector( i ) );
-        //asize = samp->size();
-        //printf("i=%d, ptr: %p, size=%d\n", i, samp->getData(), asize);
-    };
+    //const AbcA::DataType &dt = iProp.getDataType();
+    //const Alembic::Util ::uint8_t extent = dt.getExtent();
+    //Alembic::Util::Dimensions dims( extent );
+    //AbcA::ArraySamplePtr samp = AbcA::AllocateArraySample( dt, dims );
+    //index_t maxSamples = iProp.getNumSamples();
+    //for ( index_t i = 0 ; i < maxSamples; ++i ){
+    //    iProp.get( const_cast<void*>( samp->getData() ), ISampleSelector( i ) );
+    //    asize = samp->size();
+    //};
 
-    stringstream msg;
-    msg << iIndent << "  " << ptype << "name=" << iProp.getName()
-        << ";interpretation=" << iProp.getMetaData().get("interpretation")
-        << ";datatype=" << dt << ", size=" << dt.getNumBytes()
-        << ";arraysize=" << asize
-        << ";numsamps=" << iProp.getNumSamples() << endl;
-
-    cout << msg.str();
+    //cout << iIndent << "  " << ptype << "name=" << iProp.getName()
+    //    << ";interpretation=" << iProp.getMetaData().get("interpretation")
+    //    << ";datatype=" << dt << ", size=" << dt.getNumBytes()
+    //    << ";arraysize=" << asize
+    //    << ";numsamps=" << iProp.getNumSamples() << endl;
 }
 
 //-*****************************************************************************
@@ -146,8 +165,8 @@ void visitCompoundProperty( ICompoundProperty iProp, string &ioIndent ){
     string oldIndent = ioIndent;
     ioIndent += "  ";
 
-    cout << ioIndent << ptype << "name=" << iProp.getName()
-        << ";schema=" << iProp.getMetaData().get("schema") << endl;
+    //cout << ioIndent << ptype << "name=" << iProp.getName()
+    //    << ";schema=" << iProp.getMetaData().get("schema") << endl;
     bool oldIsGeom = isGeom;
     isGeom = iProp.getName() == ".geom";
 
@@ -169,7 +188,7 @@ void visitProperties( ICompoundProperty iParent, string &ioIndent )
         if ( header.isCompound()){
             visitCompoundProperty( ICompoundProperty( iParent, name), ioIndent );
         }else if ( header.isScalar()){
-            visitSimpleScalarProperty( IScalarProperty( iParent, name), ioIndent );
+            //visitSimpleScalarProperty( IScalarProperty( iParent, name), ioIndent );
         }else if (header.isArray()) {
             visitSimpleArrayProperty( IArrayProperty( iParent, name), ioIndent );
         }else {
@@ -257,102 +276,8 @@ void mkdirs(char* muldir)
     return;
 }
 
-#define sizes_max 1600
-#define addr_max  (16000)
-static uint64_t addr[addr_max] = { 0 };
-static uint64_t addr_size[addr_max] = { 0 };
-static int no[sizes_max] = { 0 };
-static int sizes[sizes_max] = { 0 }; //20172*144 207368*72 1228Microsoft Visual Studio Community 2019800*45
-static char bin_path[128] = { 0 };
+static char bin_path[256] = { 0 };
 
-void dumpData(char* p, uint64_t iPos, uint64_t iSize) {
-    char path[256];
-    char filename[128];
-    printf("\tdump: pos=%llx, size=%lld", iPos, iSize);
-    if (iPos == 0)archive_addr = p;
-    if (iSize == 4) { // read num or length
-        uint32_t* pu32 = (uint32_t*)p;
-        printf("\t\tval=0x%x, %u", *pu32, *pu32 );
-    }
-    else if (iSize == 8) { // read num or length
-        uint64_t* pu64 = (uint64_t*)p;
-        printf("\t\tval=0x%llx, %lld", *pu64, *pu64 & 0x7fffffffffffffff);
-    }
-    printf("\n");
-    //return;
-    //dump data
-    int i = 0;
-    for (i = 0; i < sizes_max; i++) {
-        if (sizes[i] == iSize) {
-            break;
-        }
-    }
-    if (iSize > 1024 && i == sizes_max) {
-        for (i = 0; i < sizes_max; i++) {
-            if (sizes[i] == 0) {
-                sizes[i] = (uint32_t)iSize;
-                break;
-            }
-        }
-    }
-    if (i < sizes_max) {
-        int n = 0;
-        for (; n < addr_max; n++) {
-            if (addr[n] == iPos) {
-                //printf("*********\n");
-                return;
-            }
-            else if (addr[n] == NULL) {
-                addr[n] = iPos;
-                addr_size[n] = iSize;
-                break;
-            }
-        }
-        if (n == addr_max) {
-            n = addr_max;
-        }
-        sprintf(path, "E:\\Projects\\maya\\aaa\\abc\\%s\\%lld\\", bin_path, iSize);
-        mkdirs(path);
-        sprintf(filename, "%d_%llx.bin", no[i]++, iPos);
-        strcat(path, filename);
-        FILE* fp = fopen(path, "wb+");
-        if (fp) {
-            fwrite(p, 1, iSize, fp);
-            fclose(fp);
-            printf("write file: %s\n", filename);
-        }
-    }
-    else {
-        if (iSize > 1024)
-            i = i;
-    }
-    //if (iSize == 1228800)
-    //    iSize = 1228800;
-}
-void printDumpStat() {
-    char* p = archive_addr;
-    for (int i = 0; i < sizes_max; i++) {
-        if (sizes[i] == 0) {
-            break;
-        }
-        printf("printDumpStat size: %d, %d\n", sizes[i], no[i]);
-    }
-    for (int i = 0; i < addr_max; i++) {
-        if (addr[i] == 0) {
-            break;
-        }
-        int nn = 0;
-        for (int j = 0; j < sizes_max; j++) if (sizes[j] == addr_size[i]) { nn = no[j]; break; }
-
-        printf("printDumpStat addr: %llx, %lld", addr[i], addr_size[i]);
-        if (nn > 2) {
-            printf(", memset 0");
-            //memset(p + addr[i], 0, addr_size[i]);
-        }
-        printf("\n");
-    }
-
-}
 void setBinPath(char* filename) {
     char* p = strrchr(filename, '\\');
     if (p)p++;
@@ -376,17 +301,18 @@ int abcz(int argc, char* argv[]) {
         char* exe = argv[0];
         char*p = strrchr(exe, '\\');
         if (p)exe = p + 1;
-        cerr << "USAGE: " << exe << " <AlembicArchive.abc>" << endl;
+        cerr << "USAGE: " << exe << " <filename.abc>" << endl;
         exit(-1);
     }
     char* filename = argv[1];
     filename = "1plane.abc";
     filename = "1plane_tri.abc";
     filename = "a1_nonormals.abc";
-    filename = "a1_1.abc";
-    //filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
-    //filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
+    filename = "a1_1.abc"; 
+    filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
+    filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
     //filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
+    //demcompress = true;
 
     setBinPath(filename);
     //setDumpData(dumpData);
@@ -405,57 +331,33 @@ int abcz(int argc, char* argv[]) {
 
         printf("archive NumTimeSamplings=%d\n", archive.getNumTimeSamplings());
         AbcA::TimeSamplingPtr tsp = archive.getTimeSampling(TimeSamplingIndex);
-        printf("tsp NumStoredTimes=%llu\n", tsp->getNumStoredTimes());
-        printf("tsp SampleTime=%f\n", tsp->getSampleTime(0));
+        printf("Time sampling: NumStoredTimes=%llu\n", tsp->getNumStoredTimes());
+        printf("Time sampling: SampleTime=%f\n", tsp->getSampleTime(0));
         const std::vector < chrono_t >& st = tsp->getStoredTimes();
-        printf("st getStoredTimes=%lld, startFrame=%f\n", st.size(), st[0]);
+        printf("Stored times: getStoredTimes=%lld, startFrame=%f\n", st.size(), st[0]);
         TimeSamplingType tst = tsp->getTimeSamplingType();
         chrono_t cycle = tst.getTimePerCycle();
         float fps = 1 / cycle;
-        printf("cycle=%f, fps=%f\n", cycle, fps);
+        printf("cycle=%f, fps=%.1f\n", cycle, fps);
         index_t maxSample = archive.getMaxNumSamplesForTimeSamplingIndex(TimeSamplingIndex);
         printf("startFrame=%f, %lld\n", st[0]/cycle, maxSample);
 
-        if (appName != ""){
-            cout << "  file written by: " << appName << endl;
-            cout << "  using Alembic : " << libraryVersionString << endl;
-            cout << "  written on : " << whenWritten << endl;
-            cout << "  user description : " << userDescription << endl << endl;
-        }
-        else{
-            cout << filename << endl;
-            cout << "  (file doesn't have any ArchiveInfo)" << endl << endl;
-        }
         visitObject(archive.getTop(), "");
     }
 
     printf("abcz done\n");
-    //printDumpStat();
-    printf("press any key to exit.\n"); 
-    //char a = getch();
-    /*exit(0);*/
+
     return 0;
 }
-void testHalf(){
-    //half f1;
-    //f1.setBits(11);
-    //printf("f1=%f\n", (float)f1);
-    //return 0;
-    //printDumpStat(NULL);
-}
-void init() {
-    //system("mode con:cols=120 lines=20000");
-    //SetConsoleScreenBufferSize(GetStdHandle(STD_OUTPUT_HANDLE), { 120,20000 });
-    //for (int i = 0; i < 9031; i++)printf("%d\n", i);
-}
-
+void compress_test();
+void decompress_test();
 //-*****************************************************************************
 int main( int argc, char *argv[] ){
-    init();
-//    testHalf();
-    //system("cmd");
+
     auto now = std::chrono::system_clock::now();
-    
+
+    //compress_test();
+    //decompress_test();
     abcz(argc, argv);
 
     auto duration = std::chrono::system_clock::now() - now;

@@ -99,6 +99,42 @@ void read_bin() {
     exit(0);
 }
 
+size_t fsize(FILE* fp)
+{
+    long n;
+    fpos_t fpos;
+    fgetpos(fp, &fpos);
+    fseek(fp, 0, SEEK_END);
+    n = ftell(fp);
+    fsetpos(fp, &fpos);
+    return n;
+}
+char* fread(std::string path, char*buf, size_t* len) {
+    FILE* fp = fopen(path.c_str(), "rb");
+    if (fp) {
+        size_t flen = fsize(fp);
+        char* p = buf ? buf: new char[flen];
+        size_t n = fread(p, 1, flen, fp);
+        fclose(fp);
+        *len = flen;
+        return p;
+    }
+    else {
+        printf("open file failed, %s\n", path.c_str());
+    }
+    return NULL;
+}
+int fwrite(std::string path, char* buf, size_t len) {
+    FILE* fp = fopen(path.c_str(), "wb");
+    if (fp) {
+        size_t n = fwrite((const void*)buf, 1, len, fp);
+        fclose(fp);
+    }
+    else {
+        printf("open file failed, %s\n", path.c_str());
+    }
+    return 0;
+}
 void combo_bin() {
     int fnum = 72, fLen = 311052;
     char path[256]; // = "E:\\Projects\\maya\\aaa\\abc\\bin_a1_nonor\\311052\\";
@@ -158,16 +194,6 @@ void combo_bin() {
         free(fdata);
     }
 //    exit(0);
-}
-long fsize(FILE* fp)
-{
-    long n;
-    fpos_t fpos;
-    fgetpos(fp, &fpos);
-    fseek(fp, 0, SEEK_END);
-    n = ftell(fp);
-    fsetpos(fp, &fpos);
-    return n;
 }
 
 int compress_bin() {
@@ -314,8 +340,115 @@ int decompress_bin() {
     return 0;
 }
 
+int compress_float0(float* frame1, float* frame2, size_t count) {
+    size_t len = 0;
+    char *p1 = fread("E:\\Projects\\maya\\aaa\\abc\\bin_a1_1\\20172\\0.bin", NULL, &len);
+    char* p2 = fread("E:\\Projects\\maya\\aaa\\abc\\bin_a1_1\\20172\\1.bin", NULL, &len);
+    frame1 = (float*)p1;
+    frame2 = (float*)p2;
+    count = len / sizeof(float);
+    //float16* frame16 = (float16*)frame2;
+    float16* frame16 = new float16[count*2];
+    float* b1 = new float[count];
+    float* b2 = new float[count];
+    memcpy(b1, frame2, sizeof(float) * count);
+    memset(frame16, 0, sizeof(float16) * count);
+    for (int i = 0; i < count; i++) {
+        b1[i] -= frame1[i];
+        frame16[i] = floatToFloat16(b1[i]);
+        //frame1[i] += float16ToFloat(frame16[i]);    // prepare next frame data
+    }
+    memcpy(frame2, frame16, sizeof(float) * count);
+
+    for (int i = 0; i < count; i++) {
+        b2[i] = frame1[i] + float16ToFloat(frame16[i]);
+        float delta = b2[i] - frame1[i];
+        printf("%d: %f\n", i, delta);
+    }
+    delete b1;
+    delete b2;
+    delete p1;
+    delete p2;
+    return 0;
+}
+int compress_float(float* frame1, float* frame2, size_t count) {
+    float16* frame16 = new float16[count*2];
+    memset(frame16, 0, sizeof(float16) * count*2);
+    for (int i = 0; i < count; i++) {
+        frame2[i] -= frame1[i];
+        frame16[i] = floatToFloat16(frame2[i]);
+        frame1[i] += float16ToFloat(frame16[i]);    // prepare next frame data
+    }
+    memcpy(frame2, frame16, sizeof(float) * count);
+
+    delete[] frame16;
+    return 0;
+}
+int decompress_float(float* frame1, float* frame2, size_t count) {
+    float16* frame16 = (float16*)frame2;
+    for (size_t i = count; i >0; i--) {
+        frame2[i-1] = frame1[i-1] + float16ToFloat(frame16[i-1]);
+    }
+    return 0;
+}
+
+void compress_test() {
+    std::string path = "E:\\Projects\\maya\\aaa\\abc\\bin_a1_1\\20172\\";
+    std::string file1 = path + "0.bin";
+    std::string file2 = path + "1.bin";
+    std::string file3 = path + "2.bin";
+    size_t len = 0;
+    char* p1 = fread(file1, NULL, &len);
+    char* p2 = fread(file2, NULL, &len);
+    char* p3 = fread(file3, NULL, &len);
+
+    size_t count = len / sizeof(float);
+
+    float* f1 = (float*)p1;
+    float* f2 = (float*)p2;
+    float* f3 = (float*)p3;
+    for (int i = 0; i < count; i++) {
+        float d1 = f2[i] - f1[i];
+        float d2 = f3[i] - f2[i];
+        printf("%d: %f, %f\n", i, d1, d2);
+    }
+
+    compress_float((float*)p1, (float*)p2, count);
+    compress_float((float*)p1, (float*)p3, count);
+    //fwrite(file2 + "z", p2, len);
+    //fwrite(file3 + "z", p3, len);
+
+
+}
+void decompress_test() {
+    std::string path = "E:\\Projects\\maya\\aaa\\abc\\bin_a1_1\\20172\\";
+    std::string file1 = path + "0.bin";
+    std::string file2 = path + "1.binz";
+    std::string file3 = path + "2.binz";
+    size_t len = 0;
+    char* p1 = fread(file1, NULL, &len);
+    char* p2 = fread(file2, NULL, &len);
+    char* p3 = fread(file3, NULL, &len);
+
+    size_t count = len / sizeof(float);
+
+    decompress_float((float*)p1, (float*)p2, count);
+    decompress_float((float*)p1, (float*)p3, count);
+    float* f1 = (float*)p1;
+    float* f2 = (float*)p2;
+    float* f3 = (float*)p3;
+    for (int i = 0; i < count; i++) {
+        float d1 = f2[i] - f1[i];
+        float d2 = f3[i] - f2[i];
+        printf("%d: %f, %f\n", i, d1, d2);
+    }
+
+    //fwrite(f2 + "z", p2, len);
+    //fwrite(f3 + "z", p3, len);
+}
+
 //e:\Projects\maya\abc\chr_DaJiaZhang.chr_DaJiaZhang_rig.render_mesh.abc
-int main2(int argc, char*argv[]){
+int main2(){
 #if 0
     float f2 = 1.0;
     uint16_t f16 = floatToFloat16(f2);
@@ -327,7 +460,7 @@ int main2(int argc, char*argv[]){
 #endif
     //read_bin();
     //combo_bin();
-    compress_bin();
+    //compress_bin();
     //decompress_bin();
 
     return 0;

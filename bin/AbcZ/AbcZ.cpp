@@ -22,7 +22,7 @@ using namespace Alembic::AbcGeom;
 using namespace Alembic::Ogawa;
 using namespace Alembic;
 using namespace std;
-
+#define REORDER
 //-*****************************************************************************
 void visitProperties( ICompoundProperty, string & );
 int compress_float(float*, float*, size_t);
@@ -37,7 +37,7 @@ typedef struct ABCZ_BLOCK {
     uint64_t    pos;        // block target pos
     uint64_t    blocksize;  // block data size
 }ABCZ_BLOCK;
-
+FILE* gfp = NULL;
 static bool demcompress = false;
 static char* archive_addr = NULL;
 static uint64_t archive_length = 0;
@@ -114,24 +114,48 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
         //}
         //
         float* pf = (float*)samp.get()->getData();
+        size_t floatCount = asize * dt.getExtent();
+        
+        float* frameBuf = new float[floatCount];
+        size_t bufSize  = floatCount * maxSamples * sizeof(float);
+        char* buf = new char[bufSize];
+        uint16_t* fp16 = (uint16_t*)buf;
+        memset(buf, 0, bufSize);
         for (index_t i = 1; i < maxSamples; ++i) {
             uint64_t oPos = 0, oSize = 0;
             iProp.getPtr()->getSamplePos(i, oPos, oSize);
             uint32_t count = sizeMap[oSize];
             if (count > 1) {
-                printf("%d\n", sizeof(float) * count);
+                //printf("write pos:%llx, size:\t%d\n", sizeof(float) * count);
                 float* frame = (float*)(archive_addr+oPos);
-                size_t count = asize * dt.getExtent();
                 if (demcompress) {
-                    decompress_float(pf, frame, count);
-                    memcpy(pf, frame, sizeof(float) * count);
+                    decompress_float(pf, frame, floatCount);
+                    memcpy(pf, frame, sizeof(float) * floatCount);
                 }
                 else {
-                    //compress_float(pf, frame, count);
-                    memset(frame, 0, sizeof(float)*count);
+                    memcpy(frameBuf, frame, floatCount * sizeof(float));
+                    compress_float(pf, frameBuf, floatCount);
+#ifdef REORDER
+                    uint16_t* frame16 = (uint16_t*)frameBuf;
+                    for (int floatIndex = 0; floatIndex < floatCount; floatIndex++) {
+                        fp16[floatIndex * maxSamples + i - 1] = frame16[floatIndex];
+                    }
+                    //memcpy(buf + (i - 1) * (floatCount * sizeof(uint16_t), frameBuf, floatCount * sizeof(uint16_t));
+#else
+                    if (gfp) {
+                        fwrite(frameBuf, sizeof(float)/2, floatCount, gfp);
+                    }
+#endif
+                    //memset(frame, 0, sizeof(float)*count);
                 }
             }
         }
+#ifdef REORDER
+        if (gfp) {
+            fwrite(buf, 1, bufSize / 2, gfp);
+        }
+#endif
+        delete[] buf;
     }
 
 }
@@ -305,14 +329,6 @@ int abcz(int argc, char* argv[]) {
         exit(-1);
     }
     char* filename = argv[1];
-    filename = "1plane.abc";
-    filename = "1plane_tri.abc";
-    filename = "a1_nonormals.abc";
-    filename = "a1_1.abc"; 
-    filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
-    filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
-    //filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
-    //demcompress = true;
 
     setBinPath(filename);
     //setDumpData(dumpData);
@@ -351,18 +367,34 @@ int abcz(int argc, char* argv[]) {
 }
 void compress_test();
 void decompress_test();
+int compress_bin();
 //-*****************************************************************************
 int main( int argc, char *argv[] ){
 
     auto now = std::chrono::system_clock::now();
 
+    //compress_bin();    exit(0);
+
     //compress_test();
     //decompress_test();
-    abcz(argc, argv);
+    gfp = fopen("e:\\abc.bin", "wb");
+    char* filename = argv[1];
+    filename = "1plane.abc";
+    filename = "1plane_tri.abc";
+    filename = "a1_nonormals.abc";
+    filename = "a1_1.abc";
+    filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
+    filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
+    filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
+    //demcompress = true;
+    char* argv2[] = { NULL, filename };
+    argc = 2;
+    abcz(argc, argv2);
 
     auto duration = std::chrono::system_clock::now() - now;
     long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     printf("totalsize_max: %u\n", totalsize_max);
     printf("spent time: %.2fs\n", ((float)ms) / 1000);
+    if(gfp)fclose(gfp);
     return 0;
 }

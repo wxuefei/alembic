@@ -203,6 +203,8 @@ int compress_bin() {
     char path_out[256];// = "E:\\Projects\\maya\\aaa\\abc\\bin\\207368\\data.zabc";
     sprintf(path, "E:\\Projects\\maya\\aaa\\abc\\bin\\%d\\data.bin", fLen);
     sprintf(path_out, "E:\\Projects\\maya\\aaa\\abc\\bin\\%d\\data.zabc", fLen);
+    sprintf(path, "E:\\abc_0.bin");
+    sprintf(path_out, "E:\\abc.zabc");
 
     FILE*fp = fopen(path, "rb+"); 
     if (fp == NULL)

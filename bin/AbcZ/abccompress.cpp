@@ -203,8 +203,8 @@ int compress_bin() {
     char path_out[256];// = "E:\\Projects\\maya\\aaa\\abc\\bin\\207368\\data.zabc";
     sprintf(path, "E:\\Projects\\maya\\aaa\\abc\\bin\\%d\\data.bin", fLen);
     sprintf(path_out, "E:\\Projects\\maya\\aaa\\abc\\bin\\%d\\data.zabc", fLen);
-    sprintf(path, "E:\\abc_0.bin");
-    sprintf(path_out, "E:\\abc.zabc");
+    sprintf(path, "E:\\wuma.f16");
+    sprintf(path_out, "E:\\wuma.f16.abcz");
 
     FILE*fp = fopen(path, "rb+"); 
     if (fp == NULL)
@@ -447,6 +447,83 @@ void decompress_test() {
 
     //fwrite(f2 + "z", p2, len);
     //fwrite(f3 + "z", p3, len);
+}
+typedef struct ABCZ_BLOCK {
+    uint32_t    frameCount;
+    uint32_t    floatCountPerFrame;
+    //uint64_t    blocksize;  // block data size
+    uint64_t    pos[0];        // frame data pos
+}ABCZ_BLOCK;
+
+int restore(char* abcFile, const char* f16File) {
+    FILE* fpAbc = fopen(abcFile, "r+b");
+    FILE* fp16 = fopen(f16File, "r+b");
+    if (fpAbc && fp16) {
+        ABCZ_BLOCK block;
+        while (!feof(fp16)) {
+            fpos_t fpos;
+            fgetpos(fp16, &fpos);
+            printf("fp16 pos: %lld\n", fpos);
+            if (fread(&block, sizeof(block), 1, fp16) == 1) {
+                if (block.frameCount == 0 || block.floatCountPerFrame == 0) {
+                    printf("data error.\n");
+                    return -1;
+                }
+                uint64_t* framePos = new uint64_t[block.frameCount];
+                if (fread(framePos, sizeof(uint64_t), block.frameCount, fp16) == block.frameCount) {
+                    uint64_t dataCount = (block.frameCount -1) * block.floatCountPerFrame;
+                    float* frame1 = new float[block.floatCountPerFrame];
+                    //float* floatData = new float[dataCount];
+                    uint16_t* f16Data = new uint16_t[dataCount];
+                    fread(f16Data, sizeof(uint16_t), dataCount, fp16);
+                    if (f16Data) {
+                        if (framePos[0] == 0) {
+                            printf("wrong frame data.\n");
+                            return -1;
+                        }
+                        fseek(fpAbc, framePos[0], SEEK_SET);
+                        if (fread(frame1, sizeof(float), block.floatCountPerFrame, fpAbc) == block.floatCountPerFrame) {
+                            printf("floatCountPerFrame=%d, frameCount=%d, frame1:%llx\n", block.floatCountPerFrame, block.frameCount, framePos[0]);
+
+                        }
+                        uint16_t* pf16 = f16Data;
+                        for (int frameIndex = 1; frameIndex < block.frameCount; ++frameIndex) {
+                            if (framePos[frameIndex] == 0) {
+                                printf("skip empty frame.\n");
+                                continue;
+                            }
+                            // orginal xyz
+                            // global xxxyyyzzz
+                            // frame xxxyyyzzz
+                            // f1(p1)f2(p2)
+                            for (int floatIndex = 0; floatIndex < block.floatCountPerFrame; floatIndex++) {
+                                int index = floatIndex * (block.frameCount - 1) + frameIndex - 1;
+                                if (index > dataCount) {
+                                    printf("out of data, index=%d, dataCount=%d\n", index, dataCount);
+                                }
+                                frame1[floatIndex] += float16ToFloat(f16Data[index]);
+                                //frame1[floatIndex] += float16ToFloat(pf16[0]);  //xyz
+                                pf16++;
+                            }
+
+                            fseek(fpAbc, framePos[frameIndex], SEEK_SET);
+                            if (fwrite(frame1, sizeof(float), block.floatCountPerFrame, fpAbc) != block.floatCountPerFrame) {
+                                printf("");
+                            }
+                        }
+                    }
+
+                    delete[] frame1;
+                    //delete[] floatData;
+                    delete[] f16Data;
+                }
+                delete[] framePos;
+}
+        }
+    }
+    if (fpAbc)fclose(fpAbc);
+    if (fp16)fclose(fp16);
+    return 0;
 }
 
 //e:\Projects\maya\abc\chr_DaJiaZhang.chr_DaJiaZhang_rig.render_mesh.abc

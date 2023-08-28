@@ -24,7 +24,7 @@ using namespace Alembic;
 using namespace std;
 #define REORDER
 //-*****************************************************************************
-void visitProperties( ICompoundProperty, string & );
+void visitProperties(ICompoundProperty);
 int compress_float(float*, float*, size_t);
 int decompress_float(float* frame1, float* frame2, size_t count);
 
@@ -34,10 +34,19 @@ typedef struct ABCZ_FILE {
     uint32_t    blockcount; // block count
 }ABCZ_FILE;
 typedef struct ABCZ_BLOCK {
-    uint64_t    pos;        // block target pos
-    uint64_t    blocksize;  // block data size
+    uint32_t    frameCount;
+    uint32_t    floatCountPerFrame;
+    //uint64_t    blocksize;  // block data size
+    uint64_t    pos[0];        // frame data pos
 }ABCZ_BLOCK;
-FILE* gfp = NULL;
+enum COMPRESS_MODE {
+    CM_FLOAT32,
+    CM_FLOAT32_REORDER,
+    CM_FLOAT16,
+    CM_FLOAT16_REORDER,
+};
+static int compress_mode = CM_FLOAT32;
+static FILE* gfp = NULL;
 static bool demcompress = false;
 static char* archive_addr = NULL;
 static uint64_t archive_length = 0;
@@ -46,8 +55,19 @@ uint32_t totalsize_max = 0;
 map<uint64_t, uint32_t> addrMap;   // addr, size
 map<uint32_t, uint32_t> sizeMap;   // size, num
 //-*****************************************************************************
-void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
-    string ptype = "ArrayProperty ";
+
+/*******************************************************************************
+ * 文件结构：
+ *  方案一：使用 ABCZ_BLOCK 结构存储压缩数据，这样的好处是不用遍历原 ABC 数据，释放数据快一点
+ *  方案二：使用原 ABC 索引数据顺序存储，好处是没有额外数据，需要遍历 ABC 数据稍微慢一点。
+ * 数据压缩：
+ *  压缩率：                      mache   wuma    a1    dajiazhang
+ *  方案一：原始 xyz 顺序，       33%     35%     23%   20%
+ *  方案二：帧内 xxxyyyzzz，      39%     51%     23%   28%
+ *  方案三：全局 xxxyyyzzz,       39%     51%     23%   28%
+ *  方案四：f1(p1)f2(p1)f3(p1),   22%     23%     22%   14%
+ *******************************************************************************/
+void visitSimpleArrayProperty(IArrayProperty iProp){
     size_t asize = 0;
 
     const AbcA::DataType& dt = iProp.getDataType();
@@ -90,14 +110,6 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
     size_t sampsize = asize * iProp.getDataType().getNumBytes();
     size_t totalsize = sampsize * numsamps;
 
-    cout << iIndent << "  " << ptype << "name=" << iProp.getName()
-        << ";interpretation=" << iProp.getMetaData().get("interpretation")
-        << ";datatype=" << dt 
-        << ";arraysize=" << asize 
-        << ";numsamps=" << numsamps
-        << ", sample size=" << sampsize
-        << ", total size=" << totalsize
-        << endl;
     if (totalsize > totalsize_max)totalsize_max = totalsize;
     if (dt.getPod() == kFloat32POD && oSize > 10240) {  // compress the data block size greater than 10k
         //for (const auto& it : addrMap) {
@@ -117,15 +129,31 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
         size_t floatCount = asize * dt.getExtent();
         
         float* frameBuf = new float[floatCount];
-        size_t bufSize  = floatCount * maxSamples * sizeof(float);
+        size_t bufSize  = floatCount * (maxSamples - 1) * sizeof(float) + (maxSamples * sizeof(uint64_t) + sizeof(ABCZ_BLOCK)); // ABCZ_BLOCK + uint64_t[]
+        size_t abczSize = floatCount * (maxSamples - 1) * sizeof(uint16_t) + (maxSamples * sizeof(uint64_t) + sizeof(ABCZ_BLOCK)); // ABCZ_BLOCK + uint64_t[]
         char* buf = new char[bufSize];
-        uint16_t* fp16 = (uint16_t*)buf;
+        ABCZ_BLOCK* block = (ABCZ_BLOCK*)buf;
+        uint16_t* fp16 = (uint16_t*)(buf+sizeof(ABCZ_BLOCK) + maxSamples * sizeof(uint64_t));
         memset(buf, 0, bufSize);
-        for (index_t i = 1; i < maxSamples; ++i) {
+        block->frameCount = maxSamples;
+        block->floatCountPerFrame = floatCount;
+        block->pos[0] = pos0;
+        int nn = 0;
+        if (gfp) {
+            fpos_t fpos;
+            fgetpos(gfp, &fpos);
+            printf("gfp pos: %lld\n", fpos);
+        }
+        int segSize = 3 * asize;
+        uint16_t* x = fp16;
+        uint16_t* y = x + asize * (maxSamples - 1);
+        uint16_t* z = y + asize * (maxSamples - 1);
+
+        for (index_t frameIndex = 1; frameIndex < maxSamples; ++frameIndex) {
             uint64_t oPos = 0, oSize = 0;
-            iProp.getPtr()->getSamplePos(i, oPos, oSize);
+            iProp.getPtr()->getSamplePos(frameIndex, oPos, oSize);
             uint32_t count = sizeMap[oSize];
-            if (count > 1) {
+            if (count > 1 && dt.getExtent() == 3){
                 //printf("write pos:%llx, size:\t%d\n", sizeof(float) * count);
                 float* frame = (float*)(archive_addr+oPos);
                 if (demcompress) {
@@ -135,92 +163,93 @@ void visitSimpleArrayProperty(IArrayProperty iProp, const string &iIndent ){
                 else {
                     memcpy(frameBuf, frame, floatCount * sizeof(float));
                     compress_float(pf, frameBuf, floatCount);
+                    //memset(frame, 0, sizeof(float)* floatCount);
 #ifdef REORDER
+                    nn++;
+                    block->pos[frameIndex] = oPos;
+
                     uint16_t* frame16 = (uint16_t*)frameBuf;
-                    for (int floatIndex = 0; floatIndex < floatCount; floatIndex++) {
-                        fp16[floatIndex * maxSamples + i - 1] = frame16[floatIndex];
+#if 0
+                    // global xxxyyyzzz
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *x++ = frame16[vIndex * 3 + 0];
                     }
-                    //memcpy(buf + (i - 1) * (floatCount * sizeof(uint16_t), frameBuf, floatCount * sizeof(uint16_t));
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *y++ = frame16[vIndex * 3 + 1];
+                    }
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *z++ = frame16[vIndex * 3 + 2];
+                    }
+#elif 0
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *fp16++ = frame16[vIndex * 3 + 0];
+                    }
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *fp16++ = frame16[vIndex * 3 + 1];
+                    }
+                    for (int vIndex = 0; vIndex < asize; vIndex++) {
+                        *fp16++ = frame16[vIndex * 3 + 2];
+                    }
+#elif 1
+                    for (int floatIndex = 0; floatIndex < floatCount; floatIndex++) {   // f1(p1) f2(p1)....
+                        int index = floatIndex * (maxSamples-1) + frameIndex - 1;
+                        fp16[index] = frame16[floatIndex];
+                    }
 #else
+                    memcpy(fp16 + (frameIndex - 1) * floatCount, frameBuf, floatCount * sizeof(uint16_t));   //xyz
+#endif
+#else
+                    memcpy(fp16 + (frameIndex - 1) * floatCount, frameBuf, floatCount * sizeof(uint16_t));   //xyz
                     if (gfp) {
                         fwrite(frameBuf, sizeof(float)/2, floatCount, gfp);
                     }
 #endif
-                    //memset(frame, 0, sizeof(float)*count);
                 }
             }
         }
 #ifdef REORDER
         if (gfp) {
-            fwrite(buf, 1, bufSize / 2, gfp);
+            fwrite(buf, 1, abczSize, gfp);
         }
 #endif
         delete[] buf;
+        if (maxSamples != nn+1) {
+            printf("nn=%d, maxSamples=%d\n", nn, maxSamples);
+        }
     }
 
 }
 
 //-*****************************************************************************
 void visitSimpleScalarProperty(IScalarProperty iProp, const string &iIndent )
-{
-    //string ptype = "ScalarProperty ";
-    //size_t asize = 0;
-
-    //const AbcA::DataType &dt = iProp.getDataType();
-    //const Alembic::Util ::uint8_t extent = dt.getExtent();
-    //Alembic::Util::Dimensions dims( extent );
-    //AbcA::ArraySamplePtr samp = AbcA::AllocateArraySample( dt, dims );
-    //index_t maxSamples = iProp.getNumSamples();
-    //for ( index_t i = 0 ; i < maxSamples; ++i ){
-    //    iProp.get( const_cast<void*>( samp->getData() ), ISampleSelector( i ) );
-    //    asize = samp->size();
-    //};
-
-    //cout << iIndent << "  " << ptype << "name=" << iProp.getName()
-    //    << ";interpretation=" << iProp.getMetaData().get("interpretation")
-    //    << ";datatype=" << dt << ", size=" << dt.getNumBytes()
-    //    << ";arraysize=" << asize
-    //    << ";numsamps=" << iProp.getNumSamples() << endl;
-}
+{}
 
 //-*****************************************************************************
-void visitCompoundProperty( ICompoundProperty iProp, string &ioIndent ){
-    string ptype = "CompoundProperty ";
-    string oldIndent = ioIndent;
-    ioIndent += "  ";
-
-    //cout << ioIndent << ptype << "name=" << iProp.getName()
-    //    << ";schema=" << iProp.getMetaData().get("schema") << endl;
+void visitCompoundProperty( ICompoundProperty iProp){
     bool oldIsGeom = isGeom;
     isGeom = iProp.getName() == ".geom";
 
-    visitProperties( iProp, ioIndent );
+    visitProperties( iProp );
 
     isGeom = oldIsGeom;
 
-    ioIndent = oldIndent;
 }
 
 //-*****************************************************************************
-void visitProperties( ICompoundProperty iParent, string &ioIndent )
-{
-    string oldIndent = ioIndent;
-    for ( size_t i = 0 ; i < iParent.getNumProperties() ; i++ )
-    {
+void visitProperties( ICompoundProperty iParent){
+    for ( size_t i = 0 ; i < iParent.getNumProperties() ; i++ ){
         PropertyHeader header = iParent.getPropertyHeader( i );
         string name = header.getName();
         if ( header.isCompound()){
-            visitCompoundProperty( ICompoundProperty( iParent, name), ioIndent );
+            visitCompoundProperty( ICompoundProperty( iParent, name) );
         }else if ( header.isScalar()){
-            //visitSimpleScalarProperty( IScalarProperty( iParent, name), ioIndent );
+            //visitSimpleScalarProperty( IScalarProperty( iParent, name) );
         }else if (header.isArray()) {
-            visitSimpleArrayProperty( IArrayProperty( iParent, name), ioIndent );
+            visitSimpleArrayProperty( IArrayProperty( iParent, name));
         }else {
             //wxf
         }
     }
-
-    ioIndent = oldIndent;
 }
 
 template<typename T>
@@ -243,7 +272,7 @@ void GetStartTimeAndFrame(T& Schema, float& StartTime, int& StartFrame)
 }
 
 //-*****************************************************************************
-void visitObject( IObject iObj, string iIndent )
+void visitObject( IObject iObj)
 {
     // Object has a name, a full name, some meta data,
     // and then it has a compound property full of properties.
@@ -256,7 +285,7 @@ void visitObject( IObject iObj, string iIndent )
 
     // Get the properties.
     ICompoundProperty props = iObj.getProperties();
-    visitProperties( props, iIndent );
+    visitProperties( props );
     if (IPolyMesh::matches(iObj.getMetaData())) //wxf
     {
         IPolyMesh mesh(iObj);
@@ -274,7 +303,7 @@ void visitObject( IObject iObj, string iIndent )
     for ( size_t i = 0 ; i < iObj.getNumChildren() ; i++ )
     {
         IObject child(iObj, iObj.getChildHeader(i).getName());
-        visitObject( child, iIndent );
+        visitObject( child );
     }
 }
 
@@ -358,7 +387,7 @@ int abcz(int argc, char* argv[]) {
         index_t maxSample = archive.getMaxNumSamplesForTimeSamplingIndex(TimeSamplingIndex);
         printf("startFrame=%f, %lld\n", st[0]/cycle, maxSample);
 
-        visitObject(archive.getTop(), "");
+        visitObject(archive.getTop());
     }
 
     printf("abcz done\n");
@@ -368,6 +397,7 @@ int abcz(int argc, char* argv[]) {
 void compress_test();
 void decompress_test();
 int compress_bin();
+int restore(char* abcFile, const char* f16File);
 //-*****************************************************************************
 int main( int argc, char *argv[] ){
 
@@ -377,20 +407,27 @@ int main( int argc, char *argv[] ){
 
     //compress_test();
     //decompress_test();
-    gfp = fopen("e:\\abc.bin", "wb");
     char* filename = argv[1];
     filename = "1plane.abc";
     filename = "1plane_tri.abc";
     filename = "a1_nonormals.abc";
     filename = "a1_1.abc";
     filename = "chr_DaJiaZhang.abc";      // totalsize_max: 87,700,200
-    filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
-    filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
+    //filename = "chr_WuMa.abc";            // totalsize_max: 177,828,336
+    //filename = "DaJiaZhangMaCheA.abc";    // totalsize_max: 1,481,316,480
     //demcompress = true;
+    string f16_file = ""; // "E:\\";
+    f16_file += filename;
+    f16_file += ".f16";
+#if 1   //compress
+    gfp = fopen(f16_file.c_str(), "wb");
     char* argv2[] = { NULL, filename };
+
     argc = 2;
     abcz(argc, argv2);
-
+#else   //decompress
+    restore(filename, f16_file.c_str());
+#endif
     auto duration = std::chrono::system_clock::now() - now;
     long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     printf("totalsize_max: %u\n", totalsize_max);

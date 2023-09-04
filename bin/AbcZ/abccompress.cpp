@@ -1,11 +1,11 @@
 ﻿#include <iostream>
-#include <LzmaDec.h>
+//#include <LzmaDec.h>
+//#include "LzmaLib.h"
 
 #include "vFile.h"
 #include "Alloc.h"
 
-#include "LzmaLib.h"
-#include "7zFile.h"
+//#include "7zFile.h"
 
 //#include<half.h>
 typedef unsigned short float16;
@@ -197,6 +197,7 @@ void combo_bin() {
 }
 
 int compress_bin() {
+#if 0
     int fLen = 207368;
     fLen = 311052;
     char path[256];// = "E:\\Projects\\maya\\aaa\\abc\\bin\\207368\\data.bin";
@@ -236,9 +237,11 @@ int compress_bin() {
     fwrite(Lfile, 1, Lsize, fp);
     fclose(fp);
     free(Lfile);
+#endif
     return 0;
 }
 int decompress_bin() {
+#if 0
     char path[256] = "E:\\Projects\\maya\\aaa\\abc\\bin\\data1.abcz";
     char path_out[256] = "E:\\Projects\\maya\\aaa\\abc\\bin\\data1.dat";
     FILE*fp = fopen(path, "rb+");
@@ -339,6 +342,7 @@ int decompress_bin() {
     }
     free(Efile);
     fclose(fp);
+#endif
     return 0;
 }
 

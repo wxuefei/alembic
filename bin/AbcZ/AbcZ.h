@@ -9,53 +9,32 @@
 #include <Alembic/Util/All.h>
 #include <Alembic/Abc/TypedPropertyTraits.h>
 #include <Alembic/Ogawa/IStreams.h>
-#include <iostream>
-#include <sstream>
-#include <windows.h>
-#include <lib7zr.h>
-#include "resource.h"
-//-*****************************************************************************
+
 using namespace Alembic::AbcGeom;
 using namespace Alembic::Ogawa;
 using namespace Alembic;
 using namespace std;
-#define REORDER
-//-*****************************************************************************
-int compress_float(float*, float*, size_t);
-int decompress_float(float* frame1, float* frame2, size_t count);
-
-typedef struct ABCZ_FILE {
-    char tag[4];            // ABCZ
-    uint64_t    filesize;   // block data size
-    uint32_t    blockcount; // block count
-}ABCZ_FILE;
-typedef struct ABCZ_BLOCK {
-    uint32_t    frameCount;
-    uint32_t    floatCountPerFrame;
-    //uint64_t    blocksize;  // block data size
-    uint64_t    pos[0];        // frame data pos
-}ABCZ_BLOCK;
 
 class AbcZ {
 private:
+    typedef struct ABCZ_FILE {
+        char tag[4];            // ABCZ
+        uint64_t    filesize;   // block data size
+        uint32_t    blockcount; // block count
+    }ABCZ_FILE;
+    typedef struct ABCZ_BLOCK {
+        uint32_t    frameCount;
+        uint32_t    floatCountPerFrame;
+        //uint64_t    blocksize;  // block data size
+        uint64_t    pos[0];        // frame data pos
+    }ABCZ_BLOCK;
+
     enum COMPRESS_MODE {
         CM_FLOAT32,
         CM_FLOAT32_REORDER,
         CM_FLOAT16,
         CM_FLOAT16_REORDER,
     };
-
-    int compress_mode = CM_FLOAT32;
-    FILE* fp_patch = NULL;
-    bool demcompress = false;
-    char* archive_addr = NULL;
-    uint64_t archive_length = 0;
-    bool isGeom = false;
-    uint32_t totalsize_max = 0;
-    map<uint64_t, uint32_t> addrMap;   // addr, size
-    map<uint32_t, uint32_t> sizeMap;   // size, num
-    string tmpPath;
-//-*****************************************************************************
 
     void visitSimpleArrayProperty(IArrayProperty iProp);
     void visitSimpleScalarProperty(IScalarProperty iProp, const string& iIndent);
@@ -69,14 +48,32 @@ private:
     void visitObject(IObject iObj);
 
     void mkdirs(char* muldir);
-    int copyfile(const char* filename, const char* abcFile);
+    int copyfile(const char* filename, const char* dstFile);
+    int restore(char* abcFile, const char* patchFile);
     bool checkFreeSpace(char* filename);
-    uint64_t fsize(char* filename);
+    uint64_t getFileSize(char* filename);
     uint64_t getDrvFreeSpace(char drv);
-    string getTempPath(uint64_t fs);
-
+    bool makeTempPath(uint64_t fs);
+    int covertToFloat16(float* frame1, float* frame2, size_t count);
+    int covertToFloat(float* frame1, float* frame2, size_t count);
+    int compressTo7z(string outFile, string abcFile, string f16_file);
+    int removeTempPath(string abcFile, string f16_file);
+    string makeAbcFilename(char* filename);
+    string makeAbczFilename(char* filename);
+    int reorderAbcData(string abcFile, string patchFile);
 public:
     int compress(char* filename);
     int decompress(char* filename);
+
+private:
+    //int compressMode = CM_FLOAT32;
+    FILE* fpPatch = NULL;
+    char* archiveAddr = NULL;
+    uint64_t archiveLength = 0;
+    bool isGeom = false;
+    map<uint64_t, uint64_t> addrMap;   // addr, size
+    map<uint64_t, uint32_t> sizeMap;   // size, num
+    string tmpPath;
+
 };
 

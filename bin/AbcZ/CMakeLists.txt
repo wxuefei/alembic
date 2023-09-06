@@ -33,7 +33,7 @@
 ##
 ##-*****************************************************************************
 
-ADD_EXECUTABLE(abcz AbcZ.cpp)
+ADD_EXECUTABLE(abcz AbcZ.cpp Main.cpp Float16.cpp)
 TARGET_LINK_LIBRARIES(abcz Alembic::Alembic)
 
 

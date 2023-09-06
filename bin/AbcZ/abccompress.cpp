@@ -1,64 +1,12 @@
-﻿#include <iostream>
+﻿#if 0
+#include <iostream>
 //#include <LzmaDec.h>
 //#include "LzmaLib.h"
-
 #include "vFile.h"
 #include "Alloc.h"
-
 //#include "7zFile.h"
-
 //#include<half.h>
-typedef unsigned short float16;
-float float16ToFloat(float16 h) {
-    uint16_t* p = (uint16_t*)(&h);
-    uint32_t fval = 0;
-    fval |= (*p & 0x8000) << 16;				// sign
-    uint32_t mant = *p & 0x03ff;
-    uint32_t exp = (*p & 0x7c00) >> 10;			// exponential
-    if (exp == 0x1f) {							// NaN or Infinity
-        fval |= mant ? 0x7fc00000 : 0x7f800000;
-    }
-    else if (exp > 0) {							// normalized
-        fval |= (exp + 0x70) << 23;
-        if (mant != 0) {
-            fval |= mant << 13;
-        }
-    }
-    else if (mant != 0) {							// denormarlized
-        for (int i = 9; i >= 0; i--) {
-            if (mant & (1 << i)) {
-                fval |= ((0x67 + i) << 23) | ((mant << (23 - i)) & 0x7fffff);
-                break;
-            }
-        }
-    }
-    // else;									// 0.0, -0.0
-
-    return *((float*)&fval);
-}
-
-float16 floatToFloat16(float f) {
-    uint32_t* p = (uint32_t*)(&f);
-    uint16_t hval = 0;
-    hval |= (*p >> 16) & 0x8000;				// sign
-    int32_t mant = *p & 0x7fffff;
-    uint16_t exp = (*p >> 23) & 0xff;
-    if (exp == 0xff) {							// NaN or Infinity
-        hval |= mant ? 0x7e00 : 0x7c00;
-    }
-    else if (exp >= 0x8f) {						// overflow, Infinity instead
-        hval |= 0x7c00;
-    }
-    else if (exp >= 0x71) {						// normalized
-        hval |= ((exp - 0x70) << 10) | (mant >> 13);
-    }
-    else if (exp >= 0x67) {						// denormalized
-        hval |= (mant | 0x800000) >> (0x7e - exp);
-    }
-    // else;									// 0.0, -0.0 or loss of precision
-
-    return *((float16*)&hval);
-}
+#include "float16.h"
 
 // 顶点数据 float 型，xyz 3 个值
 //     ArrayProperty name=P;interpretation=point;datatype=float32_t[3];arraysize=25921;numsamps=72
@@ -71,6 +19,8 @@ float16 floatToFloat16(float f) {
 //     ArrayProperty name=N;interpretation=normal;datatype=float32_t[3];arraysize=102400;numsamps=45
 // uv 数据, uv 2 个值，float
 //     ArrayProperty name=.vals;interpretation=vector;datatype=float32_t[2];arraysize=25921;numsamps=72
+// 曲线 cv 顶点，xyz 
+//     ArrayProperty name=P;interpretation=point;datatype=float32_t[3];arraysize=100;numsamps=5
 
 void read_bin() {
     const char* fn = "E:\\Projects\\maya\\aaa\\abc\\bin\\1228800\\1.bin";
@@ -99,7 +49,7 @@ void read_bin() {
     exit(0);
 }
 
-size_t fsize(FILE* fp)
+static size_t fsize(FILE* fp)
 {
     long n;
     fpos_t fpos;
@@ -109,7 +59,7 @@ size_t fsize(FILE* fp)
     fsetpos(fp, &fpos);
     return n;
 }
-char* fread(std::string path, char*buf, size_t* len) {
+static char* fread(std::string path, char*buf, size_t* len) {
     FILE* fp = fopen(path.c_str(), "rb");
     if (fp) {
         size_t flen = fsize(fp);
@@ -124,7 +74,7 @@ char* fread(std::string path, char*buf, size_t* len) {
     }
     return NULL;
 }
-int fwrite(std::string path, char* buf, size_t len) {
+static int fwrite(std::string path, char* buf, size_t len) {
     FILE* fp = fopen(path.c_str(), "wb");
     if (fp) {
         size_t n = fwrite((const void*)buf, 1, len, fp);
@@ -171,12 +121,12 @@ void combo_bin() {
             for (int i = 1; i < fnum; i++) {
                 float f2 = pf[i];
                 pf[i] = f2 - f1;
-                uint16_t f16 = floatToFloat16(pf[i]);
+                uint16_t f16 = float32To16(pf[i]);
                 uint16_t* pf16 = (uint16_t*)&pf[i];
                 *pf16++ = f16;
                 *pf16 = 0;
 
-                float f32 = float16ToFloat(f16)+f1;
+                float f32 = float16To32(f16)+f1;
                 float delta = f32 - f2;
                 if (abs(delta) > 0.0005) {
                     printf("f32=%f, f16=%f, delta=%f\n", f2, f32, delta);
@@ -361,13 +311,13 @@ int compress_float0(float* frame1, float* frame2, size_t count) {
     memset(frame16, 0, sizeof(float16) * count);
     for (int i = 0; i < count; i++) {
         b1[i] -= frame1[i];
-        frame16[i] = floatToFloat16(b1[i]);
-        //frame1[i] += float16ToFloat(frame16[i]);    // prepare next frame data
+        frame16[i] = float32To16(b1[i]);
+        //frame1[i] += float16To32(frame16[i]);    // prepare next frame data
     }
     memcpy(frame2, frame16, sizeof(float) * count);
 
     for (int i = 0; i < count; i++) {
-        b2[i] = frame1[i] + float16ToFloat(frame16[i]);
+        b2[i] = frame1[i] + float16To32(frame16[i]);
         float delta = b2[i] - frame1[i];
         printf("%d: %f\n", i, delta);
     }
@@ -377,23 +327,23 @@ int compress_float0(float* frame1, float* frame2, size_t count) {
     delete p2;
     return 0;
 }
-int compress_float(float* frame1, float* frame2, size_t count) {
+static int compress_float(float* frame1, float* frame2, size_t count) {
     float16* frame16 = new float16[count*2];
     memset(frame16, 0, sizeof(float16) * count*2);
     for (int i = 0; i < count; i++) {
         frame2[i] -= frame1[i];
-        frame16[i] = floatToFloat16(frame2[i]);
-        frame1[i] += float16ToFloat(frame16[i]);    // prepare next frame data
+        frame16[i] = float32To16(frame2[i]);
+        frame1[i] += float16To32(frame16[i]);    // prepare next frame data
     }
     memcpy(frame2, frame16, sizeof(float) * count);
 
     delete[] frame16;
     return 0;
 }
-int decompress_float(float* frame1, float* frame2, size_t count) {
+static int decompress_float(float* frame1, float* frame2, size_t count) {
     float16* frame16 = (float16*)frame2;
     for (size_t i = count; i >0; i--) {
-        frame2[i-1] = frame1[i-1] + float16ToFloat(frame16[i-1]);
+        frame2[i-1] = frame1[i-1] + float16To32(frame16[i-1]);
     }
     return 0;
 }
@@ -459,83 +409,14 @@ typedef struct ABCZ_BLOCK {
     uint64_t    pos[0];        // frame data pos
 }ABCZ_BLOCK;
 
-int restore(char* abcFile, const char* f16File) {
-    FILE* fpAbc = fopen(abcFile, "r+b");
-    FILE* fp16 = fopen(f16File, "r+b");
-    if (fpAbc && fp16) {
-        ABCZ_BLOCK block;
-        while (!feof(fp16)) {
-            fpos_t fpos;
-            fgetpos(fp16, &fpos);
-            printf("fp16 pos: %lld\n", fpos);
-            if (fread(&block, sizeof(block), 1, fp16) == 1) {
-                if (block.frameCount == 0 || block.floatCountPerFrame == 0) {
-                    printf("data error.\n");
-                    return -1;
-                }
-                uint64_t* framePos = new uint64_t[block.frameCount];
-                if (fread(framePos, sizeof(uint64_t), block.frameCount, fp16) == block.frameCount) {
-                    uint64_t dataCount = (block.frameCount -1) * block.floatCountPerFrame;
-                    float* frame1 = new float[block.floatCountPerFrame];
-                    //float* floatData = new float[dataCount];
-                    uint16_t* f16Data = new uint16_t[dataCount];
-                    fread(f16Data, sizeof(uint16_t), dataCount, fp16);
-                    if (f16Data) {
-                        if (framePos[0] == 0) {
-                            printf("wrong frame data.\n");
-                            return -1;
-                        }
-                        fseek(fpAbc, framePos[0], SEEK_SET);
-                        if (fread(frame1, sizeof(float), block.floatCountPerFrame, fpAbc) == block.floatCountPerFrame) {
-                            printf("floatCountPerFrame=%d, frameCount=%d, frame1:%llx\n", block.floatCountPerFrame, block.frameCount, framePos[0]);
 
-                        }
-                        uint16_t* pf16 = f16Data;
-                        for (int frameIndex = 1; frameIndex < block.frameCount; ++frameIndex) {
-                            if (framePos[frameIndex] == 0) {
-                                printf("skip empty frame.\n");
-                                continue;
-                            }
-                            // orginal xyz
-                            // global xxxyyyzzz
-                            // frame xxxyyyzzz
-                            // f1(p1)f2(p2)
-                            for (int floatIndex = 0; floatIndex < block.floatCountPerFrame; floatIndex++) {
-                                int index = floatIndex * (block.frameCount - 1) + frameIndex - 1;
-                                if (index > dataCount) {
-                                    printf("out of data, index=%d, dataCount=%d\n", index, dataCount);
-                                }
-                                frame1[floatIndex] += float16ToFloat(f16Data[index]);
-                                //frame1[floatIndex] += float16ToFloat(pf16[0]);  //xyz
-                                pf16++;
-                            }
-
-                            fseek(fpAbc, framePos[frameIndex], SEEK_SET);
-                            if (fwrite(frame1, sizeof(float), block.floatCountPerFrame, fpAbc) != block.floatCountPerFrame) {
-                                printf("");
-                            }
-                        }
-                    }
-
-                    delete[] frame1;
-                    //delete[] floatData;
-                    delete[] f16Data;
-                }
-                delete[] framePos;
-}
-        }
-    }
-    if (fpAbc)fclose(fpAbc);
-    if (fp16)fclose(fp16);
-    return 0;
-}
 
 //e:\Projects\maya\abc\chr_DaJiaZhang.chr_DaJiaZhang_rig.render_mesh.abc
 int main2(){
 #if 0
     float f2 = 1.0;
-    uint16_t f16 = floatToFloat16(f2);
-    float f32 = float16ToFloat(f16);
+    uint16_t f16 = float32To16(f2);
+    float f32 = float16To32(f16);
     printf("%f, %f\n", f2, f32);
     fflush(stdout);
     //half f1(f2);
@@ -548,3 +429,4 @@ int main2(){
 
     return 0;
 }
+#endif

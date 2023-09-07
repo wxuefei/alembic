@@ -412,22 +412,28 @@ int AbcZ::compress(char* filename) {
         printf("Disk space is not enough\n");
         return -1;
     }
-    string abcFile = tmpPath + ABCZ_TMP_BASE;
-    string patchFile = tmpPath + ABCZ_TMP_PATCH;
+    try {
+        string abcFile = tmpPath + ABCZ_TMP_BASE;
+        string patchFile = tmpPath + ABCZ_TMP_PATCH;
 
-    printf("begin copy....\n");
-    if (0 != copyfile(filename, abcFile.c_str())) {
-        printf("copy failed\n");
-        return -1;
-    }
-    ret = reorderAbcData(abcFile, patchFile);
-    if (ret == 0) {
+        printf("begin copy....\n");
+        if (0 != copyfile(filename, abcFile.c_str())) {
+            printf("copy failed\n");
+            return -2;
+        }
+        ret = reorderAbcData(abcFile, patchFile);
+        if (ret != 0) {
+            printf("reorderAbcData failed\n");
+            return -3;
+        }
         string outFile = makeAbczFilename(filename);
         ret = compressTo7z(outFile, abcFile, patchFile);
+
+        removeTempPath(abcFile, patchFile);
     }
-
-    removeTempPath(abcFile, patchFile);
-
+    catch (...) {
+        printf("Fatal exception!!\n");
+    }
     return ret;
 }
 /*

@@ -1,6 +1,8 @@
 //-*****************************************************************************
-// Copyright (c) 2023-2023
+//
+// Copyright(c) 2023-2024, PASSION PAINT ANIMATION
 // Compress name=P, name=N, name=uv(.vals) section data in abc
+//
 //-*****************************************************************************
 
 #include "AbcZ.h"

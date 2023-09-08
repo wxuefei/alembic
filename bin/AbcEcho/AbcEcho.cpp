@@ -42,7 +42,8 @@
 
 #include <iostream>
 #include <sstream>
-
+#include <corecrt_io.h>
+#include <excpt.h>
 //-*****************************************************************************
 using namespace ::Alembic::AbcGeom;
 
@@ -61,7 +62,7 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
 
     AbcA::ArraySamplePtr samp;
     index_t maxSamples = iProp.getNumSamples();
-    printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
+    //printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
         iProp.get( samp, ISampleSelector( i ) );
@@ -103,7 +104,7 @@ void visitSimpleScalarProperty( PROP iProp, const std::string &iIndent )
     AbcA::ArraySamplePtr samp =
         AbcA::AllocateArraySample( dt, dims );
     index_t maxSamples = iProp.getNumSamples();
-    printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
+    //printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
         iProp.get( const_cast<void*>( samp->getData() ),
@@ -221,18 +222,22 @@ int main( int argc, char *argv[] )
                   << std::endl;
         exit( -1 );
     }
-
-    // Scoped.
-    {
+    std::cout << "AbcEcho for " << Alembic::AbcCoreAbstract::GetLibraryVersion() << std::endl << std::endl;;
+    if (_access(argv[1], 0) != 0) {
+        std::cerr << "Not found " << argv[1] << std::endl;
+        exit( -1 );
+    }
+    __try {
         Alembic::AbcCoreFactory::IFactory factory;
         factory.setPolicy(ErrorHandler::kQuietNoopPolicy);
         IArchive archive = factory.getArchive( argv[1] );
 
         if (archive)
         {
-            std::cout  << "AbcEcho for "
-                       << Alembic::AbcCoreAbstract::GetLibraryVersion ()
-                       << std::endl;;
+            if (!archive.valid()) {
+                std::cerr << argv[1] << " is invalid ABC file.\n";
+                exit( -1 );
+            }
 
             std::string appName;
             std::string libraryVersionString;
@@ -264,6 +269,8 @@ int main( int argc, char *argv[] )
         }
         visitObject( archive.getTop(), "" );
     }
-
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        std::cerr << "Fatal exception!! " << argv[1] << " is invalid ABC file.\n";
+    }
     return 0;
 }

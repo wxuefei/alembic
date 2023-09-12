@@ -52,7 +52,7 @@ static const std::string g_sep( ";" );
 //-*****************************************************************************
 // FORWARD
 void visitProperties( ICompoundProperty, std::string & );
-
+uint8_t* archiveAddr = NULL;
 //-*****************************************************************************
 template <class PROP>
 void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
@@ -65,8 +65,18 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
     //printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
-        iProp.get( samp, ISampleSelector( i ) );
+        ISampleSelector ss = ISampleSelector(i);
+        iProp.get( samp, ss );
         asize = samp->size();
+        //if (iProp.getName() == "P") {
+        //    const void* p = samp->getData();
+        //    float* pf = (float*)(p);
+        //    printf("cv data: frame %lld ", i);
+        //    for (int j = 0; j < 6; j += 3) {
+        //        printf("[%.2f, %.2f, %.2f],", pf[j], pf[j + 1], pf[j + 2]);
+        //    }
+        //    printf("\n");
+        //}
     };
 
     std::string mdstring = "interpretation=";
@@ -89,6 +99,32 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
     std::cout << iIndent << "  " << ptype << "name=" << iProp.getName()
               << g_sep << mdstring << g_sep << "numsamps="
               << iProp.getNumSamples() << std::endl;
+
+    if (iProp.getName() == "P") {
+        for (index_t i = 0; i < maxSamples; ++i){
+            ISampleSelector ss = ISampleSelector(i);
+            index_t fi = ss.getIndex(iProp.getTimeSampling(), iProp.getNumSamples());
+
+            uint64_t oPos = 0, oSize = 0;
+            iProp.getPtr()->getSamplePos(i, oPos, oSize);
+            float* pf = (float*)(archiveAddr + oPos);
+            printf("data: frame %lld ", fi);
+            for (int j = 0; j < 6; j+=3) {
+                printf("[%.2f, %.2f, %.2f],", pf[j], pf[j + 1], pf[j + 2]);
+            }
+            printf("\n");
+
+
+            //iProp.get(samp, ss);
+            //const void* p = samp->getData();
+            //pf = (float*)(p);
+            //printf("samp: frame %lld ", fi);
+            //for (int j = 0; j < 6; j += 3) {
+            //    printf("[%.2f, %.2f, %.2f],", pf[j], pf[j + 1], pf[j + 2]);
+            //}
+            //printf("\n");
+        }
+    };
 }
 
 //-*****************************************************************************
@@ -156,10 +192,16 @@ void visitProperties( ICompoundProperty iParent,
                       std::string &ioIndent )
 {
     std::string oldIndent = ioIndent;
-    for ( size_t i = 0 ; i < iParent.getNumProperties() ; i++ )
+    size_t numProp = iParent.getNumProperties();
+    for ( size_t i = 0 ; i < numProp ; i++ )
     {
         PropertyHeader header = iParent.getPropertyHeader( i );
-
+        const TimeSamplingPtr ts = header.getTimeSampling();
+        if (ts) {
+            TimeSamplingType tst = ts->getTimeSamplingType(); 
+            printf("\n%s: num samples per cycle: %d, time per cycle: %f, tsp=%p\n", header.getName().c_str(),
+                tst.getNumSamplesPerCycle(), tst.getTimePerCycle(),ts.get());
+        }
         if ( header.isCompound() )
         {
             visitCompoundProperty( ICompoundProperty( iParent,
@@ -244,12 +286,7 @@ int main( int argc, char *argv[] )
             Alembic::Util::uint32_t libraryVersion;
             std::string whenWritten;
             std::string userDescription;
-            GetArchiveInfo (archive,
-                            appName,
-                            libraryVersionString,
-                            libraryVersion,
-                            whenWritten,
-                            userDescription);
+            GetArchiveInfo (archive, appName, libraryVersionString, libraryVersion, whenWritten, userDescription);
 
             if (appName != "")
             {
@@ -258,6 +295,32 @@ int main( int argc, char *argv[] )
                 std::cout << "  written on : " << whenWritten << std::endl;
                 std::cout << "  user description : " << userDescription << std::endl;
                 std::cout << std::endl;
+
+                archiveAddr = (uint8_t*)archive.getPtr()->getMemoryMapPtr();
+                uint32_t NumTimeSamplings = archive.getNumTimeSamplings();
+                printf("Time sampling: NumTimeSamplings=%u\n", NumTimeSamplings);
+                const int TimeSamplingIndex = NumTimeSamplings > 1 ? 1 : 0;
+
+                AbcA::TimeSamplingPtr tsp = archive.getTimeSampling(TimeSamplingIndex);
+                printf("TimeSamplingPtr[%d]: %p\n", TimeSamplingIndex, tsp);
+                printf("Time sampling: NumStoredTimes=%llu\n", tsp->getNumStoredTimes());
+                printf("Time sampling: SampleTime=%f\n", tsp->getSampleTime(0));
+                const std::vector < chrono_t >& st = tsp->getStoredTimes();
+                printf("Stored times: getStoredTimes=%lld, startFrame=%f\n", st.size(), st[0]);
+                TimeSamplingType tst = tsp->getTimeSamplingType();
+                chrono_t cycle = tst.getTimePerCycle();
+                chrono_t fps = 1 / cycle;
+                float startFrame = st[0] / cycle;
+                index_t maxSample = archive.getMaxNumSamplesForTimeSamplingIndex(TimeSamplingIndex);
+                printf("frame cycle=%f, fps=%.1f\n", cycle, fps);
+                printf("frame start num=%f, frame count=%lld\n\n", startFrame, maxSample);
+                if (TimeSamplingIndex == 1) {
+                    AbcA::TimeSamplingPtr tsp = archive.getTimeSampling(0);
+                    printf("TimeSamplingPtr[0]: %p\n", tsp);
+                    TimeSamplingType tst = tsp->getTimeSamplingType();
+                    chrono_t cycle = tst.getTimePerCycle();
+                    printf("TimePerCycle=%f\n", cycle);
+                }
             }
             else
             {

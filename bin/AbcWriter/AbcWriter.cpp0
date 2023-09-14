@@ -1,0 +1,416 @@
+//-*****************************************************************************
+//
+// Copyright(c) 2023-2024, PASSION PAINT ANIMATION
+//
+//-*****************************************************************************
+
+#include <iostream>
+#include <sstream>
+#include <algorithm>
+#include "util.h"
+//#include "MayaUtility.h"
+
+using namespace std;
+using namespace Alembic::AbcGeom;
+using namespace Alembic::AbcCoreAbstract;
+using namespace Alembic::AbcCoreFactory;
+
+void joinSample(OCurvesSchema &oSchema, /*ICurvesSchema &iSchema,*/ index_t reqIdx,bool test) {
+    //IV2fGeomParam iUVs = iSchema.getUVsParam();
+    //IN3fGeomParam iNormals = iSchema.getNormalsParam();
+    //IFloatGeomParam iWidths = iSchema.getWidthsParam();
+    //IFloatArrayProperty iKnots = iSchema.getKnotsProperty();    //control verts
+    //IUcharArrayProperty iOrders = iSchema.getOrdersProperty();
+
+    //ICurvesSchema::Sample iSamp = iSchema.getValue(reqIdx);
+
+    OCurvesSchema::Sample oSamp;
+    std::vector<float> position;
+    P3fArraySample a((const Imath::V3f*)&position.front(), position.size() / 3);
+
+    Abc::P3fArraySamplePtr posPtr;// = //iSamp.getPositions();
+
+    if (posPtr) {
+        if (test) {
+            //float* pf = (float*)posPtr->getData();
+            //printf("data: %.2f\n", pf[0]);
+            oSamp.setPositions(*posPtr);
+        }
+        else {
+            //float* pf = (float*)posPtr->getData();
+            //pf[0] = -1.0;  //-10.84,169.75, 9.04
+            //pf[1] = 200.0;
+            //pf[2] = 20.0;
+            //printf("data: %.2f\n", pf[0]);
+            oSamp.setPositions(a);
+        }
+    }
+
+    //Abc::V3fArraySamplePtr velocPtr = iSamp.getVelocities();
+    //if (velocPtr)
+    //    oSamp.setVelocities(*velocPtr);
+
+    oSamp.setType(kVariableOrder); // iSamp.getType());
+    //Abc::Int32ArraySamplePtr curvsNumPtr = iSamp.getCurvesNumVertices();
+    //if (curvsNumPtr)
+    //    oSamp.setCurvesNumVertices(*curvsNumPtr);
+    //oSamp.setWrap(iSamp.getWrap());
+    //oSamp.setBasis(iSamp.getBasis());
+
+    //Abc::FloatArraySamplePtr knotsPtr = iSamp.getKnots();
+    //size_t nc = iKnots.getNumSamples();
+    //long uc = knotsPtr.use_count();
+    //printf("cv %d\n", knotsPtr->size());
+    //if (knotsPtr) {
+    //    oSamp.setKnots(*knotsPtr);
+    //}
+
+    //Abc::UcharArraySamplePtr ordersPtr = iSamp.getOrders();
+    //if (ordersPtr) {
+    //    oSamp.setOrders(*ordersPtr);
+    //}
+
+    //IFloatGeomParam::Sample iWidthSample;
+    //OFloatGeomParam::Sample oWidthSample;
+    //if (iWidths) {
+    //    getOGeomParamSamp <IFloatGeomParam, IFloatGeomParam::Sample, OFloatGeomParam::Sample>
+    //        (iWidths, iWidthSample, oWidthSample, reqIdx +  0 );
+    //    oSamp.setWidths(oWidthSample);
+    //}
+
+    //IV2fGeomParam::Sample iUVSample;
+    //OV2fGeomParam::Sample oUVSample;
+    //if (iUVs) {
+    //    getOGeomParamSamp <IV2fGeomParam, IV2fGeomParam::Sample, OV2fGeomParam::Sample>(iUVs, iUVSample, oUVSample, reqIdx);
+    //    oSamp.setUVs(oUVSample);
+    //}
+
+    //IN3fGeomParam::Sample iNormalsSample;
+    //ON3fGeomParam::Sample oNormalsSample;
+    //if (iNormals) {
+    //    getOGeomParamSamp <IN3fGeomParam, IN3fGeomParam::Sample, ON3fGeomParam::Sample>(iNormals, iNormalsSample, oNormalsSample, reqIdx);
+    //    oSamp.setNormals(oNormalsSample);
+    //}
+    oSchema.set(oSamp);
+    //return oSamp;
+}
+
+/*
+* totalSamples, just used to append empty frames
+*/
+OObject joinCurves(OObject& oParentObj,/* vector<IObject>& iObjects, const TimeAndSamplesMap& iTimeMap,*/ size_t totalSamples) {
+    OCurvesSchema oSchema;//= ceateDataSchema<ICurves, ICurvesSchema, OCurves, OCurvesSchema>
+        (/*iObjects,*/ oParentObj, /*iTimeMap,*/ totalSamples);
+    OObject outObj = oSchema.getObject();
+    OCurvesSchema::Sample emptySample(P3fArraySample::emptySample(), Int32ArraySample::emptySample());
+    
+    // stitch the CurvesSchemas
+    //
+    //index_t oNumSamples = iObjects.size();
+    //numInputObjects = 1; //for test
+
+    index_t numEmpty = 0;
+    index_t oNumSamples = oSchema.getNumSamples();
+    //TimeSamplingPtr oTime = oSchema.getTimeSampling();
+    //TimeSamplingPtr iTime = iSchema.getTimeSampling();
+    index_t reqIdx = 0; //
+
+    //reqIdx = getIndexSample(oNumSamples, oTime, numSamples, iTime, numEmpty);
+    //printf("reqIdx[%d]=%lld\n", i, reqIdx);
+    reqIdx = 0;
+    for (index_t emptyIdx = 0; emptyIdx < numEmpty; ++emptyIdx) {
+        oSchema.set(emptySample);
+    }
+
+    joinSample(oSchema, reqIdx, false);
+
+    //oSchema.set(emptySample);
+
+    return outObj;
+}
+//-*****************************************************************************
+// a recursive function that reads all inputs and write to the given oObject
+// node if there's no gap in the frame range for animated nodes
+//
+//void visitObjects(vector<IObject>& iObjects, OObject& oParentObj, const TimeAndSamplesMap& iTimeMap, bool atRoot) {
+void visitObjects(OObject& oParentObj, bool atRoot) {
+    OObject outObj;
+    IObject inObj;
+
+    const AbcA::ObjectHeader& header = inObj.getHeader();
+    size_t totalSamples = 0;
+
+    if (IXform::matches(header)) {
+        //outObj = joinXform(oParentObj, /*iObjects, iTimeMap,*/ totalSamples);
+    //} else if (ISubD::matches(header)) {
+    //    outObj = joinSubD(oParentObj, iObjects, iTimeMap, totalSamples);
+    //} else if (IPolyMesh::matches(header)) {
+    //    outObj = joinPolyMesh(oParentObj, iObjects, iTimeMap, totalSamples);
+    //} else if (ICamera::matches(header)) {
+    //    outObj = joinCamera(oParentObj, iObjects, iTimeMap, totalSamples);
+    } else if (ICurves::matches(header)) {
+        outObj = joinCurves(oParentObj, /*iObjects, iTimeMap, */totalSamples);
+    //} else if (IPoints::matches(header)) {
+    //    outObj = joinPoints(oParentObj, iObjects, iTimeMap, totalSamples);
+    //} else if (INuPatch::matches(header)) {
+    //    outObj = joinNuPatch(oParentObj, iObjects, iTimeMap, totalSamples);
+    } else {
+        if (!atRoot) {
+            outObj = OObject(oParentObj, header.getName(), header.getMetaData());
+        } else {
+            // for stitching properties of the top level objects
+            outObj = oParentObj;
+        }
+
+        // collect the top level compound property
+        //ICompoundPropertyVec iCompoundProps(iObjects.size());
+        //for (size_t i = 0; i < iObjects.size(); ++i) {
+        //    if (!iObjects[i].valid()) {
+        //        continue;
+        //    }
+
+        //    iCompoundProps[i] = iObjects[i].getProperties();
+        //}
+
+        //OCompoundProperty oCompoundProperty = outObj.getProperties();
+        //stitchCompoundProp(iCompoundProps, oCompoundProperty, iTimeMap);
+    }
+
+    // After done writing THIS OObject node, if input nodes have children,
+    // go deeper, otherwise we are done here
+    //for (size_t i = 0; i < iObjects.size(); i++) {
+    //    if (!iObjects[i].valid()) {
+    //        continue;
+    //    }
+
+    //    size_t childNum = iObjects[i].getNumChildren();
+    //    for (size_t j = 0; j < childNum; ++j) {
+    //        vector< IObject > childObjects;
+    //        string childName = iObjects[i].getChildHeader(j).getName();
+    //        // skip names that we've already written out
+    //        if (outObj.getChildHeader(childName) != NULL) {
+    //            continue;
+    //        }
+
+    //        for (size_t k = i; k < iObjects.size(); ++k) {
+    //            childObjects.push_back(iObjects[k].getChild(childName));
+    //        }
+
+    //        visitObjects(childObjects, outObj, iTimeMap, false);
+    //    }
+    //}
+
+}
+TimeSamplingPtr g_frame1Tsp;
+TimeSamplingPtr getFrame1Tsp() {
+    return g_frame1Tsp;
+}
+//-*****************************************************************************
+//-*****************************************************************************
+// DO IT.
+//-*****************************************************************************
+//-*****************************************************************************
+int main(int argc, char* argv[]) {
+    if (argc < 0) {
+        cerr << "Usage: abcwriter outFile.abc \n\n"
+                "Options:\n"
+                "  -v      Verbose for the IObject.\n" ;
+        return -1;
+    }
+
+    string fileName = "out.abc"; // argv[1];
+
+
+    IFactory::CoreType coreType = IFactory::kOgawa;
+    std::string userInfo = "AbcWriter for test";
+    string appWriter = "AbcWriter";
+    string userStr = "AbcWriter: out.abc" ;
+    MetaData md;
+    md.set("_ai_AlembicVersion", "Alembic 1.8.5 (built Sep  5 2023 11:47:10)");
+    md.set("_ai_Application", "AbcWriter");
+    md.set("_ai_DateWritten", "Thu Sep 14 10:34:55 2023");
+    md.set("_ai_Description", "Create by AbcWriter");
+    //MTime sec(1.0, MTime::kSeconds);
+    //double fps(sec.as(MTime::uiUnit()));
+    double fps(0.04);
+
+    // Create an archive with the default writer
+    OArchive oArchive;
+    //oArchive = CreateArchiveWithInfo(Alembic::AbcCoreOgawa::WriteArchive(), fileName, fps, appWriter, userStr, ErrorHandler::kThrowPolicy);
+    oArchive = CreateArchiveWithInfo(Alembic::AbcCoreOgawa::WriteArchive(), fileName, appWriter, userStr, md, ErrorHandler::kThrowPolicy);
+
+    OObject oRoot = oArchive.getTop();
+    if (!oRoot.valid()) {
+        return -1;
+    }
+
+//    visitObjects(oRoot, true);
+    double startTime = 1.0;
+    double endTime = 100.0;
+
+    // 创建曲线的示例数据
+    int numPoints = 100;
+    std::vector<Alembic::Abc::V3f> points;
+    points.reserve(numPoints);
+
+    for (int i = 0; i < numPoints; ++i)
+    {
+        double t = static_cast<double>(i) / (numPoints - 1);
+        points.push_back(Alembic::Abc::V3f(static_cast<float>(t), 0.0f, 0.0f));
+    }
+
+    try {
+        std::vector < chrono_t > samples;
+        samples.push_back( 0.04);
+        //TimeSampling iTs(AbcA::TimeSamplingType(AbcA::TimeSamplingType::kAcyclic), samples);
+        TimeSampling iTs(0.04, 1.68);
+        TimeSamplingType tst =  iTs.getTimeSamplingType();
+        chrono_t cycle = tst.getTimePerCycle();
+        printf("frame cycle=%f, fps=%.1f\n", cycle, fps);
+
+        oArchive.addTimeSampling(iTs);
+
+
+        TimeSamplingPtr tsp(new TimeSampling(iTs));
+        Alembic::AbcGeom::OXform xform(oRoot, "xform_node",tsp);
+
+        // 创建曲线对象
+        //Alembic::AbcGeom::OArchive abcArchive(oArchive, Alembic::Abc::ErrorHandler::kThrowPolicy);
+        Alembic::AbcGeom::OCurves curves(xform, "my_curve", tsp);
+        Alembic::AbcGeom::OCurvesSchema& oSchema = curves.getSchema();
+
+        // 添加曲线数据
+        Alembic::AbcGeom::OCurvesSchema::Sample oSamp;
+        int32_t numCurves = 1;
+        std::vector<Alembic::Util::int32_t> nVertices(numCurves);
+        nVertices[0] = 100;
+        oSamp.setCurvesNumVertices(Alembic::Abc::Int32ArraySample(nVertices));
+        oSamp.setBasis(Alembic::AbcGeom::kBsplineBasis);
+        std::vector<Alembic::Util::uint8_t> orders(numCurves);
+        int degree = 2; // xgen always is 2
+        orders[0] = degree+1; //degree + 1;
+        oSamp.setOrders(Alembic::Abc::UcharArraySample(orders));
+        oSamp.setType(kVariableOrder);
+
+        oSamp.setPositions(Alembic::Abc::P3fArraySample(reinterpret_cast<const Imath::V3f*>(points.data()), numPoints));
+        oSamp.setSelfBounds(Alembic::Abc::Box3d());
+        //oSamp.setInvisible(Alembic::Abc::UIntArraySample());
+        //oSamp.setTopologyVisibility(Alembic::Abc::UIntArraySample());
+
+        //Alembic::AbcGeom::SampleSelector sampleSelector(static_cast<float>(startTime));
+        oSchema.set(oSamp); // , sampleSelector);
+    }
+    catch (const std::exception& e) {
+        // 捕获异常并输出错误信息
+        std::cerr << "Error creating curves object: " << e.what() << std::endl;
+    }
+
+    return 0;
+}
+#if 0
+#include <Alembic/AbcGeom/All.h>
+#include <Alembic/AbcCoreOgawa/All.h>
+#include <Alembic/AbcCoreFactory/All.h>
+//#include <Alembic/AbcCoreHDF5/All.h>
+
+int main()
+{
+    // 创建一个ABC档案文件
+    Alembic::AbcCoreFactory::IFactory factory;
+    Alembic::AbcCoreFactory::IFactory::CoreType coreType = Alembic::AbcCoreFactory::IFactory::kOgawa;
+    Alembic::AbcCoreFactory::IFactory::setCoreType(coreType);
+    Alembic::AbcCoreFactory::IFactory::CoreType currentType = Alembic::AbcCoreFactory::IFactory::getCoreType();
+
+    Alembic::AbcCoreFactory::IFactory::CoreType coreTypes[2] = { Alembic::AbcCoreFactory::IFactory::kHDF5,
+                                                                 Alembic::AbcCoreFactory::IFactory::kOgawa };
+
+    Alembic::AbcCoreFactory::IFactory::ObjectHeader objectHeader;
+    objectHeader.setMetaData(Alembic::AbcCoreFactory::MetaData());
+    Alembic::AbcCoreFactory::IFactory::setCoreType(currentType);
+
+    Alembic::AbcCoreFactory::IFactory::setCoreType(coreTypes[coreType]);
+    Alembic::AbcCoreFactory::IFactory::setOgawaNumStreamsToDisk(2);
+
+    Alembic::AbcCoreFactory::IFactory::setHDF5NumThreads(2);
+    Alembic::AbcCoreFactory::IFactory::setHDF5NumGroupsPerHierarchy(2);
+    Alembic::AbcCoreFactory::IFactory::setHDF5UseSingleFile(false);
+
+    Alembic::Abc::OArchive archive(Alembic::AbcCoreFactory::IFactory::getCoreType(), "curve_example.abc", objectHeader, Alembic::Abc::ErrorHandler::kThrowPolicy);
+
+    // 创建一个时间范围
+    double startTime = 1.0;
+    double endTime = 100.0;
+
+    // 创建曲线的示例数据
+    int numPoints = 100;
+    std::vector<Alembic::Abc::V3f> points;
+    points.reserve(numPoints);
+
+    for (int i = 0; i < numPoints; ++i)
+    {
+        double t = static_cast<double>(i) / (numPoints - 1);
+        points.push_back(Alembic::Abc::V3f(static_cast<float>(t), 0.0f, 0.0f));
+    }
+
+    // 创建曲线对象
+    Alembic::AbcGeom::OCurves curves(archive.getTop(), "my_curve", 1);
+    Alembic::AbcGeom::OCurvesSchema& curvesSchema = curves.getSchema();
+
+    // 添加曲线数据
+    Alembic::AbcGeom::OCurvesSchema::Sample curvesSample;
+    curvesSample.setPositions(Alembic::Abc::P3fArraySample(reinterpret_cast<const Imath::V3f*>(points.data()), numPoints));
+    curvesSample.setSelfBounds(Alembic::Abc::Box3d());
+    curvesSample.setInvisible(Alembic::Abc::UIntArraySample());
+    curvesSample.setTopologyVisibility(Alembic::Abc::UIntArraySample());
+
+    Alembic::AbcGeom::SampleSelector sampleSelector(static_cast<float>(startTime));
+    curvesSchema.set(curvesSample, sampleSelector);
+
+    // 关闭存档
+    archive.getArchive().getErrorHandler().cleanup();
+
+    return 0;
+}
+#elif 0
+#include <Alembic/AbcGeom/All.h>
+#include <Alembic/AbcCoreOgawa/All.h>
+
+int main()
+{
+    // 创建一个 ABC 存档文件（使用 Ogawa 文档类型）
+    Alembic::AbcCoreOgawa::WriteArchive archive = Alembic::AbcCoreOgawa::WriteArchive(); // ("curve_example.abc");
+
+    // 创建一个时间范围
+    double startTime = 1.0;
+    double endTime = 100.0;
+
+    // 创建曲线的示例数据
+    int numPoints = 100;
+    std::vector<Alembic::Abc::V3f> points;
+    points.reserve(numPoints);
+
+    for (int i = 0; i < numPoints; ++i)
+    {
+        double t = static_cast<double>(i) / (numPoints - 1);
+        points.push_back(Alembic::Abc::V3f(static_cast<float>(t), 0.0f, 0.0f));
+    }
+
+    // 创建曲线对象
+    Alembic::AbcGeom::OArchive abcArchive(archive, Alembic::Abc::ErrorHandler::kThrowPolicy);
+    Alembic::AbcGeom::OCurves curves(abcArchive.getTop(), "my_curve", 1);
+    Alembic::AbcGeom::OCurvesSchema& curvesSchema = curves.getSchema();
+
+    // 添加曲线数据
+    Alembic::AbcGeom::OCurvesSchema::Sample curvesSample;
+    curvesSample.setPositions(Alembic::Abc::P3fArraySample(reinterpret_cast<const Imath::V3f*>(points.data()), numPoints));
+    curvesSample.setSelfBounds(Alembic::Abc::Box3d());
+    //curvesSample.setInvisible(Alembic::Abc::UIntArraySample());
+    //curvesSample.setTopologyVisibility(Alembic::Abc::UIntArraySample());
+
+    //Alembic::AbcGeom::SampleSelector sampleSelector(static_cast<float>(startTime));
+    curvesSchema.set(curvesSample); // , sampleSelector);
+
+    return 0;
+}
+
+#endif

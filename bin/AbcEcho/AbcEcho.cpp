@@ -99,8 +99,8 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
     std::cout << iIndent << "  " << ptype << "name=" << iProp.getName()
               << g_sep << mdstring << g_sep << "numsamps="
               << iProp.getNumSamples() << std::endl;
-
-    if (iProp.getName() == "P") {
+    string propName = iProp.getName();
+    if (propName == "P") {
         for (index_t i = 0; i < maxSamples; ++i){
             ISampleSelector ss = ISampleSelector(i);
             index_t fi = ss.getIndex(iProp.getTimeSampling(), iProp.getNumSamples());
@@ -108,7 +108,7 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
             uint64_t oPos = 0, oSize = 0;
             iProp.getPtr()->getSamplePos(i, oPos, oSize);
             float* pf = (float*)(archiveAddr + oPos);
-            printf("data: frame %lld ", fi);
+            printf("    data: frame %lld ", fi);
             for (int j = 0; j < 6; j+=3) {
                 printf("[%.2f, %.2f, %.2f],", pf[j], pf[j + 1], pf[j + 2]);
             }
@@ -124,7 +124,40 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
             //}
             //printf("\n");
         }
-    };
+    }
+    else if (propName == "nVertices") {
+        index_t i = 0;
+        ISampleSelector ss = ISampleSelector(i);
+        index_t fi = ss.getIndex(iProp.getTimeSampling(), iProp.getNumSamples());
+
+        uint64_t oPos = 0, oSize = 0;
+        iProp.getPtr()->getSamplePos(i, oPos, oSize);
+        int32_t* pf = (int32_t*)(archiveAddr + oPos);
+        printf("    data: frame %lld %d\n", fi, *pf);
+    }
+    else if(propName == ".knots"){
+        index_t i = 0;
+        //ISampleSelector ss = ISampleSelector(i);
+        //iProp.get(samp, ss);
+        const void* p = samp->getData();
+        float *pf = (float*)(p);
+        printf("    .knots: frame %lld ", i);
+        for (int j = 0; j < asize; j ++) {
+            printf("%.2f,", pf[j]);
+        }
+        printf("\n");
+    }
+    else if(propName == ".orders"){
+        index_t i = 0;
+        ISampleSelector ss = ISampleSelector(i);
+        iProp.get(samp, ss);
+        const uint8_t* p = (const uint8_t*)samp->getData();
+        printf("    .orders: frame %lld ", i);
+        for (int j = 0; j < asize; j ++) {
+            printf("%d,", p[j]);
+        }
+        printf("\n");
+    }
 }
 
 //-*****************************************************************************
@@ -168,6 +201,19 @@ void visitSimpleScalarProperty( PROP iProp, const std::string &iIndent )
     std::cout << iIndent << "  " << ptype << "name=" << iProp.getName()
               << g_sep << mdstring << g_sep << "numsamps="
               << iProp.getNumSamples() << std::endl;
+    string propName = iProp.getName();
+    if (propName == "curveBasisAndType") {
+        index_t i = 0;
+        //ISampleSelector ss = ISampleSelector(i);
+        //iProp.get(samp, ss);
+        const uint8_t* p = (const uint8_t*)samp->getData();
+        printf("    curveBasisAndType: frame %lld ", i);
+        for (int j = 0; j < asize*4; j += 4) {
+            printf("[%d,%d,%d,%d]", p[j], p[j + 1], p[j + 2], p[j + 3]);
+        }
+        printf("\n");
+    }
+
 }
 
 //-*****************************************************************************
@@ -199,7 +245,7 @@ void visitProperties( ICompoundProperty iParent,
         const TimeSamplingPtr ts = header.getTimeSampling();
         if (ts) {
             TimeSamplingType tst = ts->getTimeSamplingType(); 
-            printf("\n%s: num samples per cycle: %d, time per cycle: %f, tsp=%p\n", header.getName().c_str(),
+            printf("\n    %s: num samples per cycle: %d, time per cycle: %f, tsp=%p\n", header.getName().c_str(),
                 tst.getNumSamplesPerCycle(), tst.getTimePerCycle(),ts.get());
         }
         if ( header.isCompound() )
@@ -236,7 +282,21 @@ void visitObject( IObject iObj,
 
     if ( path != "/" )
     {
-        std::cout << "Object " << "name=" << path << std::endl;
+        std::cout << "Object name=" << path << std::endl;
+        string schema = iObj.getMetaData().get("schema");
+        if (schema == "AbcGeom_Curve_v2") {
+            try {
+                int i = 0;
+                ICurvesSchema iSchema = ICurves(iObj).getSchema();
+                ICurvesSchema::Sample iSamp = iSchema.getValue(0);
+                std::cout << "SampType=" << iSamp.getType() << std::endl;
+            }
+            catch (const std::exception& e) {
+                // 捕获异常并输出错误信息
+                std::cerr << "Error creating curves object: " << e.what() << std::endl;
+            }
+
+        }
     }
 
     // Get the properties.

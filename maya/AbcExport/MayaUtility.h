@@ -202,6 +202,7 @@ struct JobArgs
         writeNurbsSurfaces = true;
         writeNurbsCurves = true;
         autoSubd = false;
+        skipCheckCurveGroup = false;
     }
 
     bool excludeInvisible;
@@ -226,6 +227,7 @@ struct JobArgs
     bool writeNurbsSurfaces;
     bool writeNurbsCurves;
     bool autoSubd;
+    bool skipCheckCurveGroup;
 
     std::string melPerFrameCallback;
     std::string melPostCallback;

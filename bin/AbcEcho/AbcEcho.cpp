@@ -62,7 +62,7 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
 
     AbcA::ArraySamplePtr samp;
     index_t maxSamples = iProp.getNumSamples();
-    //printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
+    printf("wxf:%s maxSamples=%d\n", __func__, maxSamples);
     for ( index_t i = 0 ; i < maxSamples; ++i )
     {
         ISampleSelector ss = ISampleSelector(i);
@@ -158,6 +158,25 @@ void visitSimpleArrayProperty( PROP iProp, const std::string &iIndent )
         }
         printf("\n");
     }
+    else if (propName == ".animChans") {
+        //Abc::IUInt32ArrayProperty p(ptr, ".animChans");
+        //if (p.getNumSamples() > 0){
+        //    Abc::UInt32ArraySamplePtr animSamp;
+        //    p.get(animSamp, p.getNumSamples() - 1);
+        //    for (std::size_t i = 0; i < animSamp->size(); ++i){
+        //        animChannels.insert((*animSamp)[i]);
+        //    }
+        //}
+        index_t i = 0;
+        ISampleSelector ss = ISampleSelector(i);
+        iProp.get(samp, ss);
+        const uint32_t* p = (const uint32_t*)samp->getData();
+        printf("    .animChans: frame %lld, ", i);
+        for (int j = 0; j < asize; j++) {
+            printf("%d,", p[j]);
+        }
+        printf("\n");
+    }
 }
 
 //-*****************************************************************************
@@ -213,6 +232,20 @@ void visitSimpleScalarProperty( PROP iProp, const std::string &iIndent )
         }
         printf("\n");
     }
+    if (propName == ".ops") {
+        index_t i = 0;
+        for (i = 0; i < maxSamples; i++) {
+            iProp.get(const_cast<void*>(samp->getData()), ISampleSelector(i));
+            asize = samp->size();
+            const uint8_t* p = (const uint8_t*)samp->getData();
+            printf("    .ops: frame %lld ", i);
+            DataType nn = samp->getDataType();
+            for (int j = 0; j < asize; j++) {
+                printf("[%d]", p[j]);
+            }
+            printf("\n");
+        }
+    }
 
 }
 
@@ -248,6 +281,7 @@ void visitProperties( ICompoundProperty iParent,
             printf("\n    %s: num samples per cycle: %d, time per cycle: %f, tsp=%p\n", header.getName().c_str(),
                 tst.getNumSamplesPerCycle(), tst.getTimePerCycle(),ts.get());
         }
+
         if ( header.isCompound() )
         {
             visitCompoundProperty( ICompoundProperty( iParent,
@@ -270,6 +304,30 @@ void visitProperties( ICompoundProperty iParent,
     }
 
     ioIndent = oldIndent;
+    if (iParent.getPropertyHeader(".animChans"))
+    {
+        Abc::IUInt32ArrayProperty p(iParent, ".animChans");
+        if (p.getNumSamples() > 0)
+        {
+            Abc::UInt32ArraySamplePtr animSamp;
+            p.get(animSamp, p.getNumSamples() - 1);
+            int nn = animSamp->size();
+            for (std::size_t i = 0; i < nn; ++i){
+
+                printf("%d ",(*animSamp)[i]);
+                //animChannels.insert((*animSamp)[i]);
+            }
+        }
+        // referer: IXform.cpp line 122
+        //AbcA::ScalarPropertyReaderPtr ops;
+        //if (iParent.getPropertyHeader(".ops") != NULL)
+        //{
+        //    ops = iParent.getScalarProperty(".ops");
+        //}
+
+    }
+
+
 }
 
 //-*****************************************************************************

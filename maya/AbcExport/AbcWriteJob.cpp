@@ -329,17 +329,32 @@ MBoundingBox AbcWriteJob::getBoundingBox(double iFrame, const MMatrix & eMInvMat
 
     return curBBox;
 }
+void currentTime(int line) {
+    time_t currentTime;
+    time(&currentTime);
 
+    struct tm* localTime = localtime(&currentTime);
+
+    static char buffer[16];
+    strftime(buffer, sizeof(buffer), "%H:%M:%S", localTime);
+    MString info ("AbcExport3 checkCurveGrp, currentTime=");
+    info += buffer;
+    info += ", line=";
+    info += line;
+    MGlobal::displayInfo(info);
+}
 bool AbcWriteJob::checkCurveGrp()
 {
     MItDag itDag(MItDag::kBreadthFirst, MFn::kNurbsCurve);
     itDag.reset(mCurDag, MItDag::kBreadthFirst, MFn::kNurbsCurve);
-
+    bool ret = true;
     bool init = false;
     int degree = 0;
     MFnNurbsCurve::Form form = MFnNurbsCurve::kInvalid;
+    int count = 0;
     for (; !itDag.isDone(); itDag.next())
     {
+        count++;
         MDagPath curvePath;
         if (itDag.getPath(curvePath) == MS::kSuccess)
         {
@@ -355,13 +370,16 @@ bool AbcWriteJob::checkCurveGrp()
                 }
                 else
                 {
-                    if (degree != fn.degree() || form != fn.form())
-                        return false;
+                    if (degree != fn.degree() || form != fn.form()) {
+                        ret = false;
+                        break;
+                    }
                 }
             }
         }
     }
-    return true;
+
+    return ret;
 }
 
 void AbcWriteJob::setup(double iFrame, MayaTransformWriterPtr iParent)
@@ -394,7 +412,10 @@ void AbcWriteJob::setup(double iFrame, MayaTransformWriterPtr iParent)
     bool writeOutAsGroup = false;
     if (riCurvesVal)
     {
-        writeOutAsGroup = checkCurveGrp();
+        if (mArgs.skipCheckCurveGroup)  //wxf
+            writeOutAsGroup = true;
+        else
+            writeOutAsGroup = checkCurveGrp();
         if (writeOutAsGroup == false)
         {
             MString msg = "Curves have different degrees or close ";

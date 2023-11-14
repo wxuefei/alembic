@@ -585,6 +585,10 @@ try
                 log += jobFlag;
                 MGlobal::displayWarning(log);
             }
+            else if (arg == "-skipccg" || arg == "-skipcheckcurvegroup")    //wxf
+            {
+                jobArgs.skipCheckCurveGroup = true;
+            }
             else
             {
                 MString warn = "Ignoring unsupported flag: ";
@@ -1188,10 +1192,12 @@ ALEMBIC_MAYA_PLUGIN_EXPORT  MStatus initializePlugin(MObject obj)
     char dllPath[MAX_PATH] = { 0 };
     GetDLLPath(dllPath);
 
+    std::string alembicVer = "1.8.5"; // Alembic::Abc::GetLibraryVersion();
+    alembicVer = Alembic::Abc::GetLibraryVersion();
     MString info = "AbcExport3 wxf(built " __DATE__  " "  __TIME__ "), v";
     info += ABCEXPORT_VERSION;
     info += " using ";
-    info += Alembic::Abc::GetLibraryVersion().c_str();
+    info += alembicVer.c_str();
     info += "\n// ";
     info += dllPath;
 #ifdef NDEBUG
